@@ -56,6 +56,7 @@ ensure_proxy_stack() {
 ensure_image() {
     docker build \
         --build-arg USER_UID="$(id -u)" \
+        --build-arg CLAUDE_CLI_CACHE_BUST="$(date +%Y%m%d)" \
         -t "$IMAGE_NAME" \
         "$SANDBOX_DIR" >/dev/null
 }
