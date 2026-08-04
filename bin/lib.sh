@@ -8,6 +8,8 @@ NETWORK_NAME="claude-sandbox-internal"
 PROXY_HOST="claude-sandbox-proxy"
 GRADLE_CACHE_DIR="$HOME/.cache/claude-sandbox/gradle"
 STATE_DIR="$HOME/.cache/claude-sandbox/state"
+GITLAB_TOKEN_FILE="$HOME/.claude/gitlab-token"
+HOST_CLAUDE_MD="$HOME/.claude/CLAUDE.md"
 
 require_task_name() {
     if [ -z "${1:-}" ]; then
@@ -56,7 +58,7 @@ ensure_proxy_stack() {
 ensure_image() {
     docker build \
         --build-arg USER_UID="$(id -u)" \
-        --build-arg CLAUDE_CLI_CACHE_BUST="$(date +%Y%m%d)" \
+        --build-arg DAILY_CACHE_BUST="$(date +%Y%m%d)" \
         -t "$IMAGE_NAME" \
         "$SANDBOX_DIR" >/dev/null
 }
@@ -76,17 +78,36 @@ git_common_dir() {
     (cd "$1" && cd "$(git rev-parse --git-common-dir)" && pwd)
 }
 
+# Mirrors Claude Code's own project-key slugification (absolute path, "/"
+# and "." each replaced with "-") so the memory mount below lands on the
+# exact same key Claude Code would derive on the host for this repo.
+project_memory_key() {
+    printf '%s' "$1" | sed 's#[/.]#-#g'
+}
+
 # Populates the DOCKER_ARGS array with everything shared between the
 # subscription and proxy wrappers: network/hardening flags, the worktree +
 # shared .git mounts (kept at identical absolute paths inside the container,
-# since git worktree linkage files embed absolute host paths), and the
-# Gradle cache mount.
+# since git worktree linkage files embed absolute host paths), the Gradle
+# cache mount, and the auto-memory/CLAUDE.md sharing below.
+#
+# home_volume (optional, 4th arg): the persistent ~/.claude identity volume
+# used by the subscription flow. When given, it's mounted FIRST so the more
+# specific memory bind mount below can nest inside it — mounting a broader
+# path after a narrower one would hide the narrower one instead of nesting.
 build_common_docker_args() {
-    local name="$1" wt_path="$2" repo_root="$3" git_common
+    local name="$1" wt_path="$2" repo_root="$3" home_volume="${4:-}" git_common project_key memory_host_dir
     git_common="$(git_common_dir "$repo_root")"
-    mkdir -p "$GRADLE_CACHE_DIR"
+    project_key="$(project_memory_key "$repo_root")"
+    memory_host_dir="$HOME/.claude/projects/${project_key}/memory"
+    mkdir -p "$GRADLE_CACHE_DIR" "$memory_host_dir"
 
-    DOCKER_ARGS=(
+    DOCKER_ARGS=()
+    if [ -n "$home_volume" ]; then
+        DOCKER_ARGS+=(-v "${home_volume}:/home/sandbox/.claude")
+    fi
+
+    DOCKER_ARGS+=(
         --rm -it
         --name "$(container_name "$name")"
         --network "$NETWORK_NAME"
@@ -102,6 +123,22 @@ build_common_docker_args() {
         -v "${git_common}:${git_common}"
         -v "${git_common}/config:${git_common}/config:ro"
         -v "${GRADLE_CACHE_DIR}:/home/sandbox/.gradle"
+        -v "${memory_host_dir}:/home/sandbox/.claude/projects/${project_key}/memory"
         -w "${wt_path}"
     )
+
+    # Your real global CLAUDE.md (personal preferences) — merged with the
+    # sandbox-notes CLAUDE.md by entrypoint.sh, not used to replace it.
+    if [ -f "$HOST_CLAUDE_MD" ]; then
+        DOCKER_ARGS+=(-v "${HOST_CLAUDE_MD}:/opt/host-claude-md/CLAUDE.md:ro")
+    fi
+
+    # ~/.claude/gitlab-token: a GitLab access token scoped to `api` only (no
+    # write_repository/read_repository) — read/comment via glab, but the
+    # token itself is structurally incapable of git push. Read fresh from
+    # the host on every run, same as the corporate proxy env vars below;
+    # never baked into the image or a volume.
+    if [ -f "$GITLAB_TOKEN_FILE" ]; then
+        DOCKER_ARGS+=(-e "GITLAB_TOKEN=$(cat "$GITLAB_TOKEN_FILE")")
+    fi
 }

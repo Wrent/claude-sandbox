@@ -17,13 +17,23 @@ RUN curl -fsSL https://deb.nodesource.com/setup_20.x | bash - \
     && apt-get install -y --no-install-recommends nodejs \
     && rm -rf /var/lib/apt/lists/*
 
-# CLAUDE_CLI_CACHE_BUST forces this layer to re-run periodically (see
-# ensure_image in bin/lib.sh) — otherwise Docker's layer cache pins the CLI
-# to whatever version was installed the first time this image was built.
-# The ARG must be referenced inside the RUN command itself, or Docker's
-# cache key for this layer never changes and the bust becomes a no-op.
-ARG CLAUDE_CLI_CACHE_BUST
-RUN : "cache-bust ${CLAUDE_CLI_CACHE_BUST}" && npm install -g @anthropic-ai/claude-code@latest
+# DAILY_CACHE_BUST forces the layers below to re-run periodically (see
+# ensure_image in bin/lib.sh) — otherwise Docker's layer cache pins these
+# tools to whatever version was installed the first time this image was
+# built. The ARG must be referenced inside each RUN command itself, or
+# Docker's cache key for that layer never changes and the bust is a no-op.
+ARG DAILY_CACHE_BUST
+RUN : "cache-bust ${DAILY_CACHE_BUST}" && npm install -g @anthropic-ai/claude-code@latest
+
+# glab: GitLab CLI, used to read/comment on MRs and issues (see
+# ~/.claude/gitlab-token handling in bin/lib.sh — never used for git push,
+# only for glab's own API calls)
+RUN : "cache-bust ${DAILY_CACHE_BUST}" \
+    && GLAB_VERSION=$(curl -fsSL -o /dev/null -w '%{url_effective}' https://gitlab.com/gitlab-org/cli/-/releases/permalink/latest | sed 's#.*/v##') \
+    && ARCH=$(dpkg --print-architecture) \
+    && curl -fsSL -o /tmp/glab.deb "https://gitlab.com/gitlab-org/cli/-/releases/v${GLAB_VERSION}/downloads/glab_${GLAB_VERSION}_linux_${ARCH}.deb" \
+    && dpkg -i /tmp/glab.deb \
+    && rm /tmp/glab.deb
 
 ARG USER_UID=1000
 RUN useradd -m -u "${USER_UID}" -s /bin/bash sandbox

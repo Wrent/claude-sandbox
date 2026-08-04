@@ -2,8 +2,12 @@
 ^api\.anthropic\.com$
 ^console\.anthropic\.com$
 ^platform\.claude\.com$
+^gitlab\.com$
 ^repo1?\.maven\.org$
 ^repo\.maven\.apache\.org$
 ^plugins\.gradle\.org$
 ^services\.gradle\.org$
+^github\.com$
+^objects\.githubusercontent\.com$
+^release-assets\.githubusercontent\.com$
 ^registry\.npmjs\.org$

@@ -47,6 +47,12 @@ The worktree is a normal folder on disk — open it directly in IDEA like any
 other folder. Edits made by the sandboxed Claude show up there immediately,
 no sync step needed.
 
+Your global `~/.claude/CLAUDE.md` and the target repo's accumulated
+auto-memory (`~/.claude/projects/<repo>/memory/`) are shared in (read-write
+for memory), so the sandbox isn't relearning things you've already taught
+your host sessions. Everything else about the identity — login session,
+transcripts, credentials — stays isolated per `DESIGN.md`.
+
 ## Reviewing and shipping the work
 
 Claude commits inside the container, but **the container can never push,
@@ -96,6 +102,23 @@ This works from any directory — the tool remembers which repo `my-task`
 belongs to. It copies just that one file into the running container; no
 restart, and the copy disappears when the container is torn down. Nothing
 is retained between tasks; run it again for a new task if needed.
+
+## GitLab access (`glab`)
+
+The image includes `glab`. To let it read MRs/issues and post comments,
+create a GitLab personal access token scoped to **`api` only** — leave
+`read_repository` and `write_repository` unchecked. `api` covers everything
+`glab` needs (reading, commenting, approving); those two repository scopes
+are what GitLab checks for git-over-HTTP push/pull, so leaving them off
+means the token is structurally incapable of `git push`, no matter what
+else it can do. (Git operations in this sandbox go over SSH by default
+anyway, which the container has no credentials for at all — see
+`DESIGN.md`.)
+
+Save the token, and nothing else, to `~/.claude/gitlab-token` (chmod it
+600). `claude-sandbox`/`claude-sandbox-proxy` read it fresh from the host
+on every run and pass it in as `GITLAB_TOKEN`; it's never baked into the
+image or a volume. Delete the file to revoke access.
 
 ## Troubleshooting
 

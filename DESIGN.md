@@ -63,6 +63,14 @@ named volume "claude-sandbox-home"  ──► ~/.claude  (subscription mode only
   (persists across ephemeral runs)        holds its own /login session,
                                            isolated from host ~/.claude)
 
+~/.claude/CLAUDE.md (host, RO)      ──► /opt/host-claude-md/CLAUDE.md
+  merged into the container's global CLAUDE.md by entrypoint.sh
+
+~/.claude/projects/<key>/memory  ───►   ~/.claude/projects/<key>/memory
+  (host, RW; <key> = repo root path      (nests inside claude-sandbox-home
+   with "/" and "." → "-", matching       for subscription mode; mounted
+   Claude Code's own project-key rule)    directly otherwise)
+
                                          claude-sandbox-<worktree> container
                                            - no NET_ADMIN, no push token
                                            - egress only via sidecar proxy
@@ -129,14 +137,25 @@ host credential files directly:
   (`claude-sandbox-home`) holds that sandbox identity's own `~/.claude`,
   populated by one interactive `claude /login` inside the container the
   first time, then reused across future ephemeral containers. This volume
-  is a completely separate identity store from the host's `~/.claude` (which
-  holds `history.jsonl`, `projects/`, and memory data spanning every
-  project) — so it's never exposed, deliberately or accidentally.
+  is a separate identity store from the host's `~/.claude` — session
+  transcripts, credentials, and everything else stay isolated — so a
+  sandbox compromise can't exfiltrate the host identity.
 - **`claude-sandbox-proxy`**: stateless. The host-side wrapper reads
   `~/.claude/proxy-settings.json` and forwards only
   `ANTHROPIC_AUTH_TOKEN` / `ANTHROPIC_BASE_URL` / model env vars as
   `docker run -e ...` flags. The settings file itself is never mounted into
   the container.
+- **Exception, deliberately narrow**: the host's global `CLAUDE.md`
+  (personal preferences) and per-project auto-memory
+  (`~/.claude/projects/<key>/memory/`) *are* shared with both modes — see
+  `build_common_docker_args` in `bin/lib.sh`. These are just markdown notes
+  (conventions, feedback, project facts), not credentials or transcripts,
+  and the whole point of auto-memory is to avoid relearning the same
+  lessons; keeping it host-only inside an isolated identity defeated that.
+  The memory mount is read-write so sandbox sessions contribute back too.
+  `<key>` is derived by mirroring Claude Code's own slugification (`/` and
+  `.` → `-`) on the repo root path — an internal convention, not a
+  documented API, so it could drift if a future CLI version changes it.
 
 ### 5. Network egress: internal Docker network + forward-proxy sidecar
 
@@ -241,8 +260,10 @@ back into it.
 
 ```
 Dockerfile              claude-sandbox image (Debian + JDK 21 + Node + claude CLI)
-entrypoint.sh           seeds ~/.claude/CLAUDE.md into a fresh volume, then execs
-CLAUDE.md               sandbox-specific guidance injected as the container's global CLAUDE.md
+entrypoint.sh           builds ~/.claude/CLAUDE.md (sandbox notes + host CLAUDE.md if
+                          mounted), symlinks .claude.json, seeds statusLine, then execs
+CLAUDE.md               sandbox-specific guidance merged into the container's global CLAUDE.md
+statusline-command.sh   same status line as the host, seeded into settings.json on first run
 docker-compose.yml      internal/external networks + proxy sidecar
 proxy/
   Dockerfile            Alpine + tinyproxy

@@ -1,10 +1,13 @@
 #!/bin/bash
 set -euo pipefail
 
-# Seed the sandbox identity's global CLAUDE.md on first run of a fresh
-# persistent volume; a populated volume from a prior run is left untouched.
+# Global CLAUDE.md: sandbox-notes (baked into the image) plus, if mounted,
+# your real personal CLAUDE.md from the host — regenerated every start since
+# neither source is something the running session itself edits.
 mkdir -p "$HOME/.claude"
-if [ ! -f "$HOME/.claude/CLAUDE.md" ]; then
+if [ -f /opt/host-claude-md/CLAUDE.md ]; then
+    cat /opt/sandbox/CLAUDE.md /opt/host-claude-md/CLAUDE.md > "$HOME/.claude/CLAUDE.md"
+else
     cp /opt/sandbox/CLAUDE.md "$HOME/.claude/CLAUDE.md"
 fi
 

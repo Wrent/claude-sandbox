@@ -15,9 +15,8 @@ save_repo_root "$NAME" "$REPO_ROOT"
 ensure_proxy_stack
 ensure_image
 WT_PATH="$(ensure_worktree "$NAME" "$REPO_ROOT")"
-build_common_docker_args "$NAME" "$WT_PATH" "$REPO_ROOT"
+build_common_docker_args "$NAME" "$WT_PATH" "$REPO_ROOT" "claude-sandbox-home"
 
 docker run \
     "${DOCKER_ARGS[@]}" \
-    -v claude-sandbox-home:/home/sandbox/.claude \
     "$IMAGE_NAME"
