@@ -96,11 +96,21 @@ project_memory_key() {
 # specific memory bind mount below can nest inside it — mounting a broader
 # path after a narrower one would hide the narrower one instead of nesting.
 build_common_docker_args() {
-    local name="$1" wt_path="$2" repo_root="$3" home_volume="${4:-}" git_common project_key memory_host_dir
+    local name="$1" wt_path="$2" repo_root="$3" home_volume="${4:-}" git_common project_key memory_host_dir git_user_name git_user_email
     git_common="$(git_common_dir "$repo_root")"
     project_key="$(project_memory_key "$repo_root")"
     memory_host_dir="$HOME/.claude/projects/${project_key}/memory"
     mkdir -p "$GRADLE_CACHE_DIR" "$memory_host_dir"
+
+    # ${git_common}/config is mounted read-only (by design — the container
+    # shouldn't be able to repoint remotes or rewrite committer identity),
+    # but that also means it can't pick up user.name/user.email from a
+    # config file that isn't there. Resolve the identity a commit would
+    # actually use on the host (repo config falling back to global) and
+    # hand it over as env vars instead — git reads these directly, no
+    # config file needed.
+    git_user_name="$(git -C "$repo_root" config user.name || true)"
+    git_user_email="$(git -C "$repo_root" config user.email || true)"
 
     DOCKER_ARGS=()
     if [ -n "$home_volume" ]; then
@@ -132,6 +142,15 @@ build_common_docker_args() {
         -v "${memory_host_dir}:/home/sandbox/.claude/projects/${project_key}/memory"
         -w "${wt_path}"
     )
+
+    if [ -n "$git_user_name" ] && [ -n "$git_user_email" ]; then
+        DOCKER_ARGS+=(
+            -e "GIT_AUTHOR_NAME=${git_user_name}"
+            -e "GIT_AUTHOR_EMAIL=${git_user_email}"
+            -e "GIT_COMMITTER_NAME=${git_user_name}"
+            -e "GIT_COMMITTER_EMAIL=${git_user_email}"
+        )
+    fi
 
     # Your real global CLAUDE.md (personal preferences) — merged with the
     # sandbox-notes CLAUDE.md by entrypoint.sh, not used to replace it.
