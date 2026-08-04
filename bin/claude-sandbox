@@ -1,0 +1,23 @@
+#!/bin/bash
+# Launch a sandboxed Claude Code session (subscription auth) scoped to one
+# git worktree. Auth persists across runs in the "claude-sandbox-home"
+# Docker volume, populated by an interactive `claude /login` the first time
+# — a separate identity store from the host's own ~/.claude.
+set -euo pipefail
+
+source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib.sh"
+
+require_task_name "${1:-}"
+NAME="$1"
+REPO_ROOT="$(resolve_repo_root)"
+save_repo_root "$NAME" "$REPO_ROOT"
+
+ensure_proxy_stack
+ensure_image
+WT_PATH="$(ensure_worktree "$NAME" "$REPO_ROOT")"
+build_common_docker_args "$NAME" "$WT_PATH" "$REPO_ROOT"
+
+docker run \
+    "${DOCKER_ARGS[@]}" \
+    -v claude-sandbox-home:/home/sandbox/.claude \
+    "$IMAGE_NAME"

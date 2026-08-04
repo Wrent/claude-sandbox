@@ -1,0 +1,15 @@
+services:
+  proxy:
+    build: ./proxy
+    container_name: claude-sandbox-proxy
+    networks:
+      - internal
+      - external
+    restart: unless-stopped
+
+networks:
+  internal:
+    name: claude-sandbox-internal
+    internal: true
+  external:
+    name: claude-sandbox-external

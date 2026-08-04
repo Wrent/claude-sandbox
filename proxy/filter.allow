@@ -1,0 +1,8 @@
+^llm-proxy-ai\.kube1-tt2\.lskube\.eu$
+^api\.anthropic\.com$
+^console\.anthropic\.com$
+^repo1?\.maven\.org$
+^repo\.maven\.apache\.org$
+^plugins\.gradle\.org$
+^services\.gradle\.org$
+^registry\.npmjs\.org$

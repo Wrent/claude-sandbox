@@ -1,0 +1,45 @@
+#!/bin/bash
+# Launch a sandboxed Claude Code session (corporate LLM proxy auth) scoped
+# to one git worktree. Stateless: reads ~/.claude/proxy-settings.json on the
+# host and forwards only the resulting env vars — the settings file itself
+# is never mounted into the container.
+set -euo pipefail
+
+source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib.sh"
+
+require_task_name "${1:-}"
+NAME="$1"
+REPO_ROOT="$(resolve_repo_root)"
+save_repo_root "$NAME" "$REPO_ROOT"
+PROXY_SETTINGS="$HOME/.claude/proxy-settings.json"
+
+if [ ! -f "$PROXY_SETTINGS" ]; then
+    echo "error: $PROXY_SETTINGS not found" >&2
+    exit 1
+fi
+
+read_env() {
+    node -e "
+        const env = require('$PROXY_SETTINGS').env || {};
+        const v = env['$1'];
+        if (v !== undefined) process.stdout.write(String(v));
+    "
+}
+
+AUTH_TOKEN="$(read_env ANTHROPIC_AUTH_TOKEN)"
+BASE_URL="$(read_env ANTHROPIC_BASE_URL)"
+SONNET_MODEL="$(read_env ANTHROPIC_DEFAULT_SONNET_MODEL)"
+HAIKU_MODEL="$(read_env ANTHROPIC_DEFAULT_HAIKU_MODEL)"
+
+ensure_proxy_stack
+ensure_image
+WT_PATH="$(ensure_worktree "$NAME" "$REPO_ROOT")"
+build_common_docker_args "$NAME" "$WT_PATH" "$REPO_ROOT"
+
+docker run \
+    "${DOCKER_ARGS[@]}" \
+    -e "ANTHROPIC_AUTH_TOKEN=${AUTH_TOKEN}" \
+    -e "ANTHROPIC_BASE_URL=${BASE_URL}" \
+    -e "ANTHROPIC_DEFAULT_SONNET_MODEL=${SONNET_MODEL}" \
+    -e "ANTHROPIC_DEFAULT_HAIKU_MODEL=${HAIKU_MODEL}" \
+    "$IMAGE_NAME"
