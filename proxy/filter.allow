@@ -6,6 +6,7 @@
 ^repo1?\.maven\.org$
 ^repo\.maven\.apache\.org$
 ^plugins\.gradle\.org$
+^plugins-artifacts\.gradle\.org$
 ^services\.gradle\.org$
 ^dl\.google\.com$
 ^github\.com$
