@@ -1,0 +1,93 @@
+#!/bin/bash
+# Removes claude-sandbox worktrees (<repo>/.claude/worktrees/<task>) whose
+# branch is already merged into the upstream default branch and whose
+# working tree is clean. Locked worktrees (in use by another session) and
+# ones with uncommitted changes are always left alone — never force-removed.
+#
+# Usage: claude-sandbox-prune [--apply]
+#   (no args)  dry run — reports what would be removed and why anything is skipped
+#   --apply    actually removes the eligible worktrees
+set -euo pipefail
+
+source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib.sh"
+
+APPLY=0
+if [ "${1:-}" = "--apply" ]; then
+    APPLY=1
+fi
+
+REPO_ROOT="$(resolve_repo_root)"
+WORKTREES_DIR="$REPO_ROOT/.claude/worktrees"
+CURRENT_ROOT="$(git rev-parse --show-toplevel)"
+
+if [ ! -d "$WORKTREES_DIR" ]; then
+    echo "no worktrees under $WORKTREES_DIR"
+    exit 0
+fi
+
+DEFAULT_BRANCH="$(git -C "$REPO_ROOT" symbolic-ref --short refs/remotes/origin/HEAD 2>/dev/null | sed 's@^origin/@@')"
+DEFAULT_BRANCH="${DEFAULT_BRANCH:-master}"
+git -C "$REPO_ROOT" fetch origin "$DEFAULT_BRANCH" --quiet 2>/dev/null || true
+
+WT_INFO="$(mktemp)"
+trap 'rm -f "$WT_INFO"' EXIT
+
+# One porcelain pass, parsed into path/branch/locked rows — avoids
+# re-invoking `git worktree list` per worktree and works without
+# associative arrays (macOS ships bash 3.2 by default).
+git -C "$REPO_ROOT" worktree list --porcelain | awk '
+    /^worktree /{path=$2; locked=0; branch=""}
+    /^branch /{branch=$2; sub("refs/heads/","",branch)}
+    /^locked/{locked=1}
+    /^$/{if (path!="") {print path"\t"branch"\t"locked; path=""}}
+' > "$WT_INFO"
+
+removable=0
+skipped=0
+
+while IFS=$'\t' read -r wt_path branch locked; do
+    case "$wt_path" in
+        "$WORKTREES_DIR"/*) ;;
+        *) continue ;; # not one of this tool's worktrees — never touch it
+    esac
+    name="$(basename "$wt_path")"
+
+    if [ "$wt_path" = "$CURRENT_ROOT" ]; then
+        echo "skip     $name  ($branch)  — this session"
+        skipped=$((skipped + 1))
+        continue
+    fi
+
+    if [ "$locked" = "1" ]; then
+        echo "skip     $name  ($branch)  — locked, in use by another session"
+        skipped=$((skipped + 1))
+        continue
+    fi
+
+    if [ -z "$branch" ] || ! git -C "$REPO_ROOT" merge-base --is-ancestor "$branch" "origin/$DEFAULT_BRANCH" 2>/dev/null; then
+        echo "skip     $name  ($branch)  — not merged into origin/$DEFAULT_BRANCH"
+        skipped=$((skipped + 1))
+        continue
+    fi
+
+    if [ -n "$(git -C "$wt_path" status --porcelain)" ]; then
+        echo "skip     $name  ($branch)  — merged, but has uncommitted changes; stash or commit first"
+        skipped=$((skipped + 1))
+        continue
+    fi
+
+    if [ "$APPLY" -eq 1 ]; then
+        git -C "$REPO_ROOT" worktree remove "$wt_path"
+        echo "removed  $name  ($branch)"
+    else
+        echo "remove   $name  ($branch)  — merged into origin/$DEFAULT_BRANCH, clean, unlocked"
+    fi
+    removable=$((removable + 1))
+done < "$WT_INFO"
+
+echo
+if [ "$APPLY" -eq 1 ]; then
+    echo "removed $removable, skipped $skipped"
+else
+    echo "$removable removable, $skipped skipped — dry run, pass --apply to actually remove"
+fi

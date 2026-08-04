@@ -59,11 +59,24 @@ git -C <repo>/.claude/worktrees/my-task log
 git -C <repo>/.claude/worktrees/my-task push -u origin my-task
 ```
 
-When you're done with the task:
+When you're done with a single task:
 
 ```sh
 git -C <repo> worktree remove .claude/worktrees/my-task
 git -C <repo> branch -D my-task   # once merged/no longer needed
+```
+
+To clean up in bulk instead, run `claude-sandbox-prune` from inside the
+repo. It removes any `.claude/worktrees/<task>` whose branch is already
+merged into the upstream default branch and whose working tree is clean.
+It never touches a worktree that's locked (in use by another session,
+including the one you're standing in) or that has uncommitted changes —
+those are reported, not force-removed.
+
+```sh
+cd ~/projects/some-repo
+claude-sandbox-prune           # dry run — lists what would be removed
+claude-sandbox-prune --apply   # actually removes the eligible worktrees
 ```
 
 ## Giving it access to a secret it needs
