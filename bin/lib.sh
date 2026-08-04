@@ -100,8 +100,12 @@ project_memory_key() {
 # specific memory bind mount below can nest inside it — mounting a broader
 # path after a narrower one would hide the narrower one instead of nesting.
 build_common_docker_args() {
-    local name="$1" wt_path="$2" repo_root="$3" home_volume="${4:-}" git_common project_key memory_host_dir git_user_name git_user_email
+    local name="$1" wt_path="$2" repo_root="$3" home_volume="${4:-}" git_common project_key memory_host_dir git_user_name git_user_email tmpfs_owner
     git_common="$(git_common_dir "$repo_root")"
+    # Matches the sandbox user's UID/GID (set at image build time from the
+    # host user, see ensure_image) — --tmpfs defaults to root ownership
+    # otherwise, and the container runs as non-root.
+    tmpfs_owner="uid=$(id -u),gid=$(id -g)"
     project_key="$(project_memory_key "$repo_root")"
     memory_host_dir="$HOME/.claude/projects/${project_key}/memory"
     mkdir -p "$GRADLE_CACHE_DIR" "$memory_host_dir"
@@ -127,6 +131,25 @@ build_common_docker_args() {
         --network "$NETWORK_NAME"
         --cap-drop ALL
         --security-opt no-new-privileges
+        # Claude Code's own live daemon/session-coordination state (worker
+        # PIDs, unix-socket paths under /tmp, background-agent job state)
+        # assumes single-host semantics. claude-sandbox-home is shared
+        # across every concurrently-running task, so two containers writing
+        # to these same paths at once produces a last-writer-wins race —
+        # confirmed directly: two live containers showed byte-identical
+        # daemon/roster.json, one task's worker registration silently
+        # clobbered by the other's. tmpfs gives each container its own
+        # private, empty view of just these paths; everything else under
+        # ~/.claude (credentials, settings, memory, plugins) stays on the
+        # shared volume as before, nested inside it same as any other
+        # narrower mount.
+        --tmpfs "/home/sandbox/.claude/daemon:${tmpfs_owner}"
+        --tmpfs "/home/sandbox/.claude/session-env:${tmpfs_owner}"
+        --tmpfs "/home/sandbox/.claude/sessions:${tmpfs_owner}"
+        --tmpfs "/home/sandbox/.claude/jobs:${tmpfs_owner}"
+        --tmpfs "/home/sandbox/.claude/shell-snapshots:${tmpfs_owner}"
+        --tmpfs "/home/sandbox/.claude/file-history:${tmpfs_owner}"
+        --tmpfs "/home/sandbox/.claude-runtime:${tmpfs_owner}"
         -e "http_proxy=http://${PROXY_HOST}:8888"
         -e "https_proxy=http://${PROXY_HOST}:8888"
         -e "HTTP_PROXY=http://${PROXY_HOST}:8888"

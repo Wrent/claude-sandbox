@@ -1,6 +1,16 @@
 #!/bin/bash
 set -euo pipefail
 
+# Daemon coordination files that live directly under ~/.claude (not in
+# their own directory, so a tmpfs mount can't target just them) — redirect
+# to the private tmpfs at ~/.claude-runtime so concurrent containers on the
+# shared claude-sandbox-home volume can't clobber each other's daemon
+# state. See the --tmpfs comment in bin/lib.sh for the full story.
+mkdir -p "$HOME/.claude-runtime"
+for f in daemon.lock daemon.log daemon.status.json history.jsonl; do
+    ln -sf "$HOME/.claude-runtime/$f" "$HOME/.claude/$f"
+done
+
 # Global CLAUDE.md: sandbox-notes (baked into the image) plus, if mounted,
 # your real personal CLAUDE.md from the host — regenerated every start since
 # neither source is something the running session itself edits.

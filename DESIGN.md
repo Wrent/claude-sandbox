@@ -170,6 +170,23 @@ host credential files directly:
   actually looks. Mounted read-write, unlike skills/CLAUDE.md, since Claude
   Code writes to this directory during normal use (sweep timestamps,
   catalog cache).
+- **Sharing `claude-sandbox-home` across concurrent tasks has a sharp
+  edge**: Claude Code's own daemon/session-coordination state
+  (`~/.claude/daemon/`, `daemon.lock`, `session-env/`, `jobs/`, `sessions/`,
+  `shell-snapshots/`, `file-history/`) assumes single-host semantics —
+  worker PIDs and unix-socket paths recorded there are only meaningful
+  within the process/container that wrote them. Two containers on the same
+  volume writing to these paths concurrently produces a last-writer-wins
+  race. Confirmed directly: two simultaneously-running task containers
+  showed byte-identical `daemon/roster.json`, one task's own worker
+  registration silently overwritten by the other's — plausibly the cause
+  of one session appearing to hang until the other's finished. Fixed with
+  per-container `--tmpfs` mounts (with explicit `uid`/`gid`, since
+  `--tmpfs` defaults to root ownership and the container runs as
+  `sandbox`) over just those paths, layered on top of the shared volume —
+  identity/config (credentials, settings, memory, plugins) stays shared
+  and persistent; live coordination state stays private and ephemeral per
+  container.
 
 ### 5. Network egress: internal Docker network + forward-proxy sidecar
 
