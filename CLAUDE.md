@@ -14,6 +14,23 @@ narrow view of the host:
   Anthropic API, public package registries). Anything else will time out
   or fail to connect — that's expected, not a bug to work around.
 
+## Report permission/access problems immediately — don't work around them
+
+This sandbox is in an early PoC phase. If anything is blocked — a host
+not on the network allowlist, a denied filesystem/tool permission, a
+missing credential, a command that fails because of the sandbox's
+restrictions rather than a real bug in the code — **stop and report it to
+the user immediately**, with the exact command/error. The user can
+usually fix the actual restriction (add a host to the allowlist, grant a
+credential, adjust a mount) in a minute or two, and would rather do that
+than have you route around it.
+
+Do not: retry with reduced scope, switch to a different tool/mirror/host
+to dodge the restriction, silently skip the step, or fabricate a
+workaround. Even a "successful" workaround defeats the point of a PoC
+whose whole purpose is to surface exactly which restrictions need
+adjusting.
+
 ## Missing credential files
 
 If a command fails because a gitignored `.env`/credential file is missing,
