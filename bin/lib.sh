@@ -118,6 +118,12 @@ build_common_docker_args() {
         -e "HTTP_PROXY=http://${PROXY_HOST}:8888"
         -e "HTTPS_PROXY=http://${PROXY_HOST}:8888"
         -e "no_proxy=localhost,127.0.0.1"
+        # JVM tools (gradlew's bootstrap included) don't read http_proxy/
+        # https_proxy — those are a shell/curl convention. JAVA_TOOL_OPTIONS
+        # is read directly by the JVM itself, so this covers gradlew and any
+        # other java invocation, not just ones that go through a wrapper
+        # script that happens to forward GRADLE_OPTS.
+        -e "JAVA_TOOL_OPTIONS=-Dhttp.proxyHost=${PROXY_HOST} -Dhttp.proxyPort=8888 -Dhttps.proxyHost=${PROXY_HOST} -Dhttps.proxyPort=8888 -Dhttp.nonProxyHosts=localhost|127.0.0.1"
         -e "GRANT_SECRET_HINT=${SANDBOX_DIR}/bin/grant-secret.sh ${name}"
         -v "${wt_path}:${wt_path}"
         -v "${git_common}:${git_common}"

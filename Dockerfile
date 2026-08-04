@@ -2,7 +2,7 @@
 FROM debian:bookworm-slim
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
-        ca-certificates curl gnupg git bash procps ripgrep jq \
+        ca-certificates curl gnupg git bash procps ripgrep jq nano \
     && rm -rf /var/lib/apt/lists/*
 
 # Temurin 21 JDK: glibc-based, matches this repo's Kotlin/Gradle toolchain
@@ -46,6 +46,8 @@ RUN chmod +x /usr/local/bin/entrypoint.sh /opt/sandbox/statusline-command.sh
 
 ENV CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC=1
 ENV HOME=/home/sandbox
+ENV EDITOR=nano
+ENV VISUAL=nano
 USER sandbox
 
 ENTRYPOINT ["/usr/local/bin/entrypoint.sh"]
