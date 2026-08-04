@@ -17,17 +17,38 @@ fi
 # persisted tree so it survives across runs like everything else under .claude/.
 ln -sf "$HOME/.claude/.claude.json" "$HOME/.claude.json"
 
-# Seed the status line on first run of a fresh volume, same as CLAUDE.md
-# above; leaves it alone (and any other settings) once already set.
+# Seed the status line on first run of a fresh volume (left alone once
+# already set), and always sync enabledPlugins/extraKnownMarketplaces from
+# the host's settings.json (if mounted) so installed plugins/skills — e.g.
+# glab — match the host on every start, not just the first one.
 node -e "
     const fs = require('fs');
     const path = '$HOME/.claude/settings.json';
+    const hostSettingsPath = '/opt/host-settings/settings.json';
     let settings = {};
     if (fs.existsSync(path)) settings = JSON.parse(fs.readFileSync(path, 'utf8'));
     if (!settings.statusLine) {
         settings.statusLine = { type: 'command', command: 'bash /opt/sandbox/statusline-command.sh' };
-        fs.writeFileSync(path, JSON.stringify(settings, null, 2));
     }
+    if (fs.existsSync(hostSettingsPath)) {
+        const hostSettings = JSON.parse(fs.readFileSync(hostSettingsPath, 'utf8'));
+        if (hostSettings.enabledPlugins) settings.enabledPlugins = hostSettings.enabledPlugins;
+        if (hostSettings.extraKnownMarketplaces) settings.extraKnownMarketplaces = hostSettings.extraKnownMarketplaces;
+    }
+    fs.writeFileSync(path, JSON.stringify(settings, null, 2));
 "
+
+# Installed plugins (glab, etc.) record their install path as an absolute
+# HOST path in installed_plugins.json/known_marketplaces.json — see the
+# HOST_PLUGINS_DIR comment in bin/lib.sh for why. That content is mounted
+# at the host's own path, not the container's; symlink the two state files
+# into this container's own ~/.claude/plugins so Claude Code finds them
+# where it actually looks, while the absolute paths inside them still
+# resolve since the underlying content is reachable at that same path.
+if [ -n "${HOST_HOME_PATH:-}" ] && [ -f "${HOST_HOME_PATH}/.claude/plugins/installed_plugins.json" ]; then
+    mkdir -p "$HOME/.claude/plugins"
+    ln -sf "${HOST_HOME_PATH}/.claude/plugins/installed_plugins.json" "$HOME/.claude/plugins/installed_plugins.json"
+    ln -sf "${HOST_HOME_PATH}/.claude/plugins/known_marketplaces.json" "$HOME/.claude/plugins/known_marketplaces.json"
+fi
 
 exec "$@"

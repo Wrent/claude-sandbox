@@ -47,11 +47,14 @@ The worktree is a normal folder on disk — open it directly in IDEA like any
 other folder. Edits made by the sandboxed Claude show up there immediately,
 no sync step needed.
 
-Your global `~/.claude/CLAUDE.md` and the target repo's accumulated
-auto-memory (`~/.claude/projects/<repo>/memory/`) are shared in (read-write
-for memory), so the sandbox isn't relearning things you've already taught
-your host sessions. Everything else about the identity — login session,
-transcripts, credentials — stays isolated per `DESIGN.md`.
+Your global `~/.claude/CLAUDE.md`, the target repo's accumulated auto-memory
+(`~/.claude/projects/<repo>/memory/`, read-write), your personal skills
+(`~/.claude/skills/`, `~/.agents/skills/`), and installed plugins/skills
+like `glab` (`~/.claude/plugins/`, plus the matching `enabledPlugins`/
+`extraKnownMarketplaces` from `settings.json`) are all shared in, so the
+sandbox isn't relearning things you've already taught your host sessions
+or missing tooling you already have. Everything else about the identity —
+login session, transcripts, credentials — stays isolated per `DESIGN.md`.
 
 ## Reviewing and shipping the work
 

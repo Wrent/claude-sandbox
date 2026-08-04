@@ -156,6 +156,20 @@ host credential files directly:
   `<key>` is derived by mirroring Claude Code's own slugification (`/` and
   `.` → `-`) on the repo root path — an internal convention, not a
   documented API, so it could drift if a future CLI version changes it.
+- Same exception, extended to skills and plugins: `~/.claude/skills/`,
+  `~/.agents/skills/` (some skill entries are relative symlinks into it),
+  and `~/.claude/plugins/` (installed plugins like `glab`) are mounted in,
+  plus `enabledPlugins`/`extraKnownMarketplaces` synced from the host's
+  `settings.json` on every start. `installed_plugins.json`/
+  `known_marketplaces.json` record each plugin's install path as an
+  *absolute host path* (e.g. `/Users/you/.claude/plugins/cache/litellm/
+  glab/1.0.0`) — same issue as git worktree linkage files — so the plugins
+  mount lands at that identical host path rather than a container-relative
+  one, and `entrypoint.sh` symlinks the two state files into the
+  container's own `~/.claude/plugins` so Claude Code finds them where it
+  actually looks. Mounted read-write, unlike skills/CLAUDE.md, since Claude
+  Code writes to this directory during normal use (sweep timestamps,
+  catalog cache).
 
 ### 5. Network egress: internal Docker network + forward-proxy sidecar
 

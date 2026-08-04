@@ -10,6 +10,10 @@ GRADLE_CACHE_DIR="$HOME/.cache/claude-sandbox/gradle"
 STATE_DIR="$HOME/.cache/claude-sandbox/state"
 GITLAB_TOKEN_FILE="$HOME/.claude/gitlab-token"
 HOST_CLAUDE_MD="$HOME/.claude/CLAUDE.md"
+HOST_SETTINGS_JSON="$HOME/.claude/settings.json"
+HOST_SKILLS_DIR="$HOME/.claude/skills"
+HOST_AGENTS_SKILLS_DIR="$HOME/.agents/skills"
+HOST_PLUGINS_DIR="$HOME/.claude/plugins"
 
 require_task_name() {
     if [ -z "${1:-}" ]; then
@@ -156,6 +160,42 @@ build_common_docker_args() {
     # sandbox-notes CLAUDE.md by entrypoint.sh, not used to replace it.
     if [ -f "$HOST_CLAUDE_MD" ]; then
         DOCKER_ARGS+=(-v "${HOST_CLAUDE_MD}:/opt/host-claude-md/CLAUDE.md:ro")
+    fi
+
+    # settings.json's enabledPlugins/extraKnownMarketplaces — merged into the
+    # container's own settings.json by entrypoint.sh (like statusLine above).
+    if [ -f "$HOST_SETTINGS_JSON" ]; then
+        DOCKER_ARGS+=(-v "${HOST_SETTINGS_JSON}:/opt/host-settings/settings.json:ro")
+    fi
+
+    # Personal skills. Some entries under ~/.claude/skills are relative
+    # symlinks into ~/.agents/skills (e.g. brainstorming -> ../../.agents/
+    # skills/brainstorming) — mounting both at the container's own
+    # conventional paths keeps those symlinks resolvable, no path
+    # translation needed since relative symlinks don't care where the
+    # containing tree is rooted.
+    if [ -d "$HOST_SKILLS_DIR" ]; then
+        DOCKER_ARGS+=(-v "${HOST_SKILLS_DIR}:/home/sandbox/.claude/skills:ro")
+    fi
+    if [ -d "$HOST_AGENTS_SKILLS_DIR" ]; then
+        DOCKER_ARGS+=(-v "${HOST_AGENTS_SKILLS_DIR}:/home/sandbox/.agents/skills:ro")
+    fi
+
+    # Installed plugins (e.g. the glab skill). installed_plugins.json /
+    # known_marketplaces.json record each plugin's installPath as an
+    # ABSOLUTE HOST PATH (e.g. /Users/you/.claude/plugins/cache/litellm/
+    # glab/1.0.0) — same problem as the git worktree linkage files, so this
+    # mounts at that identical host path rather than a container-relative
+    # one. entrypoint.sh symlinks the two state files into the container's
+    # own ~/.claude/plugins so Claude Code finds them at the location it
+    # actually looks, while the paths inside them still resolve correctly.
+    # Read-write: unlike CLAUDE.md/skills, Claude Code actively writes to
+    # this directory (sweep timestamps, catalog cache) during normal use.
+    if [ -d "$HOST_PLUGINS_DIR" ]; then
+        DOCKER_ARGS+=(
+            -v "${HOST_PLUGINS_DIR}:${HOME}/.claude/plugins"
+            -e "HOST_HOME_PATH=${HOME}"
+        )
     fi
 
     # ~/.claude/gitlab-token: a GitLab access token scoped to `api` only (no
