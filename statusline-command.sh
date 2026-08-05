@@ -15,6 +15,11 @@ WHITE="\033[37m"
 
 SEP="${DIM}  ${RESET}"
 
+# Inverted/highlighted, not just another colored segment — this file only
+# ever ships inside the sandbox image (the host has its own separate copy),
+# so it's unconditional: seeing this statusline at all means sandboxed.
+SANDBOX_BADGE="\033[1;97;41m 🔒 SANDBOX \033[0m"
+
 # --- Model ---
 model=$(echo "$input" | jq -r '.model.display_name // "unknown"')
 model_str="${CYAN}🤖 ${model}${RESET}"
@@ -89,7 +94,7 @@ if [ -n "$cwd" ] && [ -d "$cwd" ]; then
 fi
 
 # --- Assemble ---
-line="${model_str}${SEP}${context_str}"
+line="${SANDBOX_BADGE}${SEP}${model_str}${SEP}${context_str}"
 [ -n "$cost_str" ] && line="${line}${SEP}${cost_str}"
 [ -n "$duration_str" ] && line="${line}${SEP}${duration_str}"
 line="${line}${SEP}${path_str}"
