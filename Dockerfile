@@ -2,7 +2,7 @@
 FROM debian:bookworm-slim
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
-        ca-certificates curl gnupg git bash procps ripgrep jq nano \
+        ca-certificates curl gnupg git bash procps ripgrep jq nano unzip \
     && rm -rf /var/lib/apt/lists/*
 
 # Temurin 21 JDK: glibc-based, matches this repo's Kotlin/Gradle toolchain
@@ -34,6 +34,17 @@ RUN : "cache-bust ${DAILY_CACHE_BUST}" \
     && curl -fsSL -o /tmp/glab.deb "https://gitlab.com/gitlab-org/cli/-/releases/v${GLAB_VERSION}/downloads/glab_${GLAB_VERSION}_linux_${ARCH}.deb" \
     && dpkg -i /tmp/glab.deb \
     && rm /tmp/glab.deb
+
+# OpenTofu (tofu): for validating Terraform config syntax (init/validate/fmt).
+# Deliberately NOT given network access to GCP or the gcs backend — see
+# proxy/filter.allow, only the provider registry is allowlisted. Good for
+# `tofu init -backend=false` + `tofu validate`/`fmt`, not for plan/apply
+# against real infrastructure.
+RUN : "cache-bust ${DAILY_CACHE_BUST}" \
+    && curl -fsSL https://get.opentofu.org/install-opentofu.sh -o /tmp/install-opentofu.sh \
+    && chmod +x /tmp/install-opentofu.sh \
+    && /tmp/install-opentofu.sh --install-method standalone \
+    && rm /tmp/install-opentofu.sh
 
 ARG USER_UID=1000
 RUN useradd -m -u "${USER_UID}" -s /bin/bash sandbox

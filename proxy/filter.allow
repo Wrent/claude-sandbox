@@ -14,3 +14,4 @@
 ^objects\.githubusercontent\.com$
 ^release-assets\.githubusercontent\.com$
 ^registry\.npmjs\.org$
+^registry\.opentofu\.org$

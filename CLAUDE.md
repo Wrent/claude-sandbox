@@ -36,6 +36,13 @@ One exception: mutating YouTrack MCP tools (`create_issue`, `update_issue`,
 in auto mode — that one's intentional, not a sandbox restriction to report.
 Just wait for the approval like normal.
 
+Another: `tofu` (OpenTofu) is installed for validating Terraform config
+(`tofu init -backend=false`, `validate`, `fmt`) but deliberately cannot
+reach GCP or the `gcs` backend at all — real infrastructure and state stay
+out of reach on purpose. `plan`/`apply` against real infra, or any command
+that touches the configured backend, will fail to connect; that's the
+intended boundary, not something to fix by finding a way around it.
+
 ## Missing credential files
 
 If a command fails because a gitignored `.env`/credential file is missing,

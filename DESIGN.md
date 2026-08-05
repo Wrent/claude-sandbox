@@ -226,11 +226,21 @@ Starting allowlist (default-deny otherwise):
   minimal telemetry `CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC=1` still needs)
 - GitLab host (`git fetch`/`git pull`/`glab` reads only — no push credential
   present regardless of network reachability)
-- Maven Central, Gradle Plugin Portal, npm registry (build/dependency
-  resolution)
+- Maven Central, Gradle Plugin Portal, npm registry, OpenTofu registry
+  (build/dependency resolution)
 
 This list should be verified/extended against what a clean `./gradlew build`
 actually reaches for service-router before relying on it.
+
+`tofu` (OpenTofu) is installed for validating this repo's Terraform config
+(`init -backend=false`, `validate`, `fmt`) — deliberately with no path to
+GCP or the `gcs` backend. Confirmed directly: with a stale local backend
+pointer present, `init` tried to reach `oauth2.googleapis.com` and got
+`Filtered`; with a clean directory, `init -backend=false` needs only the
+provider registry and completes without ever touching Google's APIs. Real
+infrastructure and state stay genuinely out of reach, not just
+undocumented — `plan`/`apply` against the real backend will fail to
+connect.
 
 ### 6. Need-to-know secret access
 
