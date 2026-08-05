@@ -14,6 +14,8 @@ HOST_SETTINGS_JSON="$HOME/.claude/settings.json"
 HOST_SKILLS_DIR="$HOME/.claude/skills"
 HOST_AGENTS_SKILLS_DIR="$HOME/.agents/skills"
 HOST_PLUGINS_DIR="$HOME/.claude/plugins"
+HOST_CLAUDE_JSON="$HOME/.claude.json"
+SANDBOX_MCP_OVERRIDES="$HOME/.claude/sandbox-mcp-overrides.json"
 
 require_task_name() {
     if [ -z "${1:-}" ]; then
@@ -219,6 +221,33 @@ build_common_docker_args() {
             -v "${HOST_PLUGINS_DIR}:${HOME}/.claude/plugins"
             -e "HOST_HOME_PATH=${HOME}"
         )
+    fi
+
+    # Local/user-scoped MCP servers registered against this repo (e.g. via
+    # `claude mcp add --scope local`) live in ~/.claude.json's
+    # projects[repo_root].mcpServers, not the repo's own tracked .mcp.json
+    # — so they're invisible to the sandbox by default even though the
+    # user clearly already trusts and uses them for this exact repo.
+    # entrypoint.sh merges just that one key into the container's own
+    # .claude.json, every start, keyed by the same repo_root string (the
+    # plain repo root, not the worktree path — matches how memory's
+    # project-key mapping already resolves worktrees back to the main repo).
+    if [ -f "$HOST_CLAUDE_JSON" ]; then
+        DOCKER_ARGS+=(
+            -v "${HOST_CLAUDE_JSON}:/opt/host-settings/claude.json:ro"
+            -e "HOST_REPO_ROOT=${repo_root}"
+        )
+    fi
+
+    # ~/.claude/sandbox-mcp-overrides.json: sandbox-only MCP server configs
+    # that take priority over the mirrored ones above, keyed the same way
+    # ({"<repo_root>": {"<server-name>": {...}}}). For servers holding a
+    # credential (e.g. youtrack-mcp) where you want a separate, independently
+    # revocable token instead of reusing your host one — put an entry with
+    # the same server name here and it replaces the mirrored version; any
+    # other server not listed here still just mirrors the host as before.
+    if [ -f "$SANDBOX_MCP_OVERRIDES" ]; then
+        DOCKER_ARGS+=(-v "${SANDBOX_MCP_OVERRIDES}:/opt/host-settings/sandbox-mcp-overrides.json:ro")
     fi
 
     # ~/.claude/gitlab-token: a GitLab access token scoped to `api` only (no

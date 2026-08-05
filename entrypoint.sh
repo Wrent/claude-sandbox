@@ -27,10 +27,45 @@ fi
 # persisted tree so it survives across runs like everything else under .claude/.
 ln -sf "$HOME/.claude/.claude.json" "$HOME/.claude.json"
 
+# Local/user-scoped MCP servers (claude mcp add --scope local) registered
+# against this repo on the host — see the HOST_CLAUDE_JSON comment in
+# bin/lib.sh for why these aren't visible by default. Synced every start,
+# keyed by the same repo-root path string on both sides. Sandbox-only
+# overrides (separate, independently revocable tokens) replace individual
+# server entries by name — see the SANDBOX_MCP_OVERRIDES comment in bin/lib.sh.
+if [ -f /opt/host-settings/claude.json ] && [ -n "${HOST_REPO_ROOT:-}" ]; then
+    node -e "
+        const fs = require('fs');
+        const path = '$HOME/.claude.json';
+        const repoRoot = process.env.HOST_REPO_ROOT;
+        const hostConfig = JSON.parse(fs.readFileSync('/opt/host-settings/claude.json', 'utf8'));
+        const hostProject = hostConfig.projects && hostConfig.projects[repoRoot];
+        const mcpServers = Object.assign({}, hostProject && hostProject.mcpServers);
+        const overridesPath = '/opt/host-settings/sandbox-mcp-overrides.json';
+        if (fs.existsSync(overridesPath)) {
+            const overrides = JSON.parse(fs.readFileSync(overridesPath, 'utf8'));
+            Object.assign(mcpServers, overrides[repoRoot]);
+        }
+        if (Object.keys(mcpServers).length > 0) {
+            const config = JSON.parse(fs.readFileSync(path, 'utf8'));
+            config.projects = config.projects || {};
+            config.projects[repoRoot] = config.projects[repoRoot] || {};
+            config.projects[repoRoot].mcpServers = mcpServers;
+            fs.writeFileSync(path, JSON.stringify(config, null, 2));
+        }
+    "
+fi
+
 # Seed the status line on first run of a fresh volume (left alone once
-# already set), and always sync enabledPlugins/extraKnownMarketplaces from
-# the host's settings.json (if mounted) so installed plugins/skills — e.g.
-# glab — match the host on every start, not just the first one.
+# already set), always sync enabledPlugins/extraKnownMarketplaces from the
+# host's settings.json (if mounted) so installed plugins/skills — e.g. glab
+# — match the host on every start, not just the first one, and always
+# ensure the mutating-YouTrack-tool permission gate below is present. This
+# is a sandbox-only safety policy, not synced from the host — you don't
+# want this friction on your normal host sessions, only here, since
+# --permission-mode auto (see Dockerfile) skips the normal approval prompt
+# for everything else. Union with any ask rules already there (e.g.
+# user-added ones) rather than overwriting, so nothing gets silently lost.
 node -e "
     const fs = require('fs');
     const path = '$HOME/.claude/settings.json';
@@ -45,6 +80,15 @@ node -e "
         if (hostSettings.enabledPlugins) settings.enabledPlugins = hostSettings.enabledPlugins;
         if (hostSettings.extraKnownMarketplaces) settings.extraKnownMarketplaces = hostSettings.extraKnownMarketplaces;
     }
+    const mutatingYoutrackTools = [
+        'create_issue', 'update_issue', 'add_comment', 'apply_command', 'log_work',
+        'create_project', 'update_project', 'add_project_member',
+        'create_user', 'update_user', 'delete_user', 'add_user_to_group', 'remove_user_from_group',
+    ];
+    settings.permissions = settings.permissions || {};
+    const ask = new Set(settings.permissions.ask || []);
+    mutatingYoutrackTools.forEach(t => ask.add('mcp__youtrack-mcp__' + t));
+    settings.permissions.ask = Array.from(ask);
     fs.writeFileSync(path, JSON.stringify(settings, null, 2));
 "
 

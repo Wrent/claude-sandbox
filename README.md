@@ -135,6 +135,35 @@ Save the token, and nothing else, to `~/.claude/gitlab-token` (chmod it
 on every run and pass it in as `GITLAB_TOKEN`; it's never baked into the
 image or a volume. Delete the file to revoke access.
 
+## Local MCP servers registered on the host
+
+Local/user-scoped MCP servers (`claude mcp add --scope local`) registered
+against a repo live in your host's `~/.claude.json`, not the repo's own
+tracked `.mcp.json` — invisible to the sandbox by default even though
+you're clearly already trusting that tool for this exact repo. These get
+mirrored in automatically, same token and all, keyed by the repo's path.
+The corresponding host has to be reachable too — check `proxy/filter.allow`.
+
+If you'd rather the sandbox use a **separate, independently revocable
+token** for a given server instead of reusing your host one (recommended
+for anything with real write access), add an override at
+`~/.claude/sandbox-mcp-overrides.json`:
+
+```json
+{
+  "/Users/you/projects/some-repo": {
+    "server-name": {
+      "type": "http",
+      "url": "https://...",
+      "headers": { "Authorization": "Bearer <sandbox-only-token>" }
+    }
+  }
+}
+```
+
+An entry here replaces the mirrored config for that one server name;
+anything not listed still just mirrors the host as before.
+
 ## Troubleshooting
 
 - **"run this from inside the git repo you want to sandbox"** — you ran

@@ -170,6 +170,23 @@ host credential files directly:
   actually looks. Mounted read-write, unlike skills/CLAUDE.md, since Claude
   Code writes to this directory during normal use (sweep timestamps,
   catalog cache).
+- Local/user-scoped MCP servers (`claude mcp add --scope local`) live in
+  `~/.claude.json`'s `projects[repo_root].mcpServers`, not the repo's
+  tracked `.mcp.json` — same blind spot as skills/plugins, same fix:
+  mirrored into the container's own `.claude.json` every start, keyed by
+  the same `repo_root` string. Unlike the others, this one can carry a
+  live credential (e.g. a YouTrack bearer token), so
+  `~/.claude/sandbox-mcp-overrides.json` lets a specific server name use a
+  separate, independently-revocable sandbox-only token instead of reusing
+  the host's — checked first, falls back to the mirrored host config per
+  server name if no override exists for it. For YouTrack specifically,
+  token scoping has no read-only option (unlike GitLab's `api`/
+  `read_repository` split — see the `glab` section above), so mutating
+  tools (`create_issue`, `update_issue`, `add_comment`, etc., enumerated by
+  querying the live server's `tools/list`) are gated behind a `settings.json`
+  `permissions.ask` rule instead, applied every start as a sandbox-only
+  policy layered on top of `--permission-mode auto` — not synced from the
+  host, since this friction is deliberately sandbox-specific.
 - **Sharing `claude-sandbox-home` across concurrent tasks has a sharp
   edge**: Claude Code's own daemon/session-coordination state
   (`~/.claude/daemon/`, `daemon.lock`, `session-env/`, `jobs/`, `sessions/`,

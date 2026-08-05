@@ -31,6 +31,11 @@ workaround. Even a "successful" workaround defeats the point of a PoC
 whose whole purpose is to surface exactly which restrictions need
 adjusting.
 
+One exception: mutating YouTrack MCP tools (`create_issue`, `update_issue`,
+`add_comment`, etc.) are deliberately gated behind a permission prompt even
+in auto mode — that one's intentional, not a sandbox restriction to report.
+Just wait for the approval like normal.
+
 ## Missing credential files
 
 If a command fails because a gitignored `.env`/credential file is missing,
