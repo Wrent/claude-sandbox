@@ -103,18 +103,21 @@ while IFS=$'\t' read -r wt_path branch locked; do
 
     if [ "$locked" = "1" ]; then
         echo "skip     $name  ($branch)  — locked, in use by another session"
+        echo "           sure it's not actually in use? $(basename "$0") --force $name"
         skipped=$((skipped + 1))
         continue
     fi
 
     if [ -z "$branch" ] || ! git -C "$REPO_ROOT" merge-base --is-ancestor "$branch" "origin/$DEFAULT_BRANCH" 2>/dev/null; then
         echo "skip     $name  ($branch)  — not merged into origin/$DEFAULT_BRANCH"
+        echo "           branch stays intact either way; remove just the checkout: $(basename "$0") --force $name"
         skipped=$((skipped + 1))
         continue
     fi
 
     if [ -n "$(git -C "$wt_path" status --porcelain)" ]; then
         echo "skip     $name  ($branch)  — merged, but has uncommitted changes; stash or commit first"
+        echo "           sure you want to discard those changes? $(basename "$0") --force $name"
         skipped=$((skipped + 1))
         continue
     fi
