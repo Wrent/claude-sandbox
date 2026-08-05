@@ -2,14 +2,57 @@
 # Removes claude-sandbox worktrees (<repo>/.claude/worktrees/<task>) whose
 # branch is already merged into the upstream default branch and whose
 # working tree is clean. Locked worktrees (in use by another session) and
-# ones with uncommitted changes are always left alone — never force-removed.
+# ones with uncommitted changes are left alone in the default bulk mode —
+# never force-removed there. Use --force <name> to override for one
+# specific, explicitly-named worktree instead.
 #
 # Usage: claude-sandbox-prune [--apply]
-#   (no args)  dry run — reports what would be removed and why anything is skipped
-#   --apply    actually removes the eligible worktrees
+#   (no args)     dry run — reports what would be removed and why anything is skipped
+#   --apply       actually removes the eligible worktrees
+#
+#        claude-sandbox-prune --force <name>
+#   Removes exactly that one worktree regardless of lock state or
+#   uncommitted changes. A lock usually means "a session's worktree
+#   feature registered this and never cleanly unregistered it" (e.g. after
+#   a crash) rather than "something is using it right now" — but if a
+#   container/session for <name> is actually still running, stop it first;
+#   this does not check for that.
 set -euo pipefail
 
 source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib.sh"
+
+if [ "${1:-}" = "--force" ]; then
+    if [ -z "${2:-}" ]; then
+        echo "usage: $(basename "$0") --force <name>" >&2
+        exit 1
+    fi
+    FORCE_NAME="$2"
+    REPO_ROOT="$(resolve_repo_root)"
+    FORCE_WT_PATH="$REPO_ROOT/.claude/worktrees/$FORCE_NAME"
+
+    if [ ! -d "$FORCE_WT_PATH" ]; then
+        echo "error: no worktree at $FORCE_WT_PATH" >&2
+        exit 1
+    fi
+
+    LOCK_REASON="$(git -C "$REPO_ROOT" worktree list --porcelain | awk -v p="$FORCE_WT_PATH" '
+        /^worktree /{path=$2; reason=""}
+        path==p && /^locked/{$1=""; reason=substr($0,2)}
+        path==p && /^$/{if (reason!="") print reason; exit}
+    ')"
+    if [ -n "$LOCK_REASON" ]; then
+        echo "overriding lock: $LOCK_REASON"
+    fi
+    if [ -n "$(git -C "$FORCE_WT_PATH" status --porcelain 2>/dev/null)" ]; then
+        echo "warning: uncommitted changes in this worktree will be lost"
+    fi
+
+    # git requires --force twice to override a lock, once for uncommitted
+    # changes — passing it twice unconditionally covers either or both.
+    git -C "$REPO_ROOT" worktree remove --force --force "$FORCE_WT_PATH"
+    echo "force-removed $FORCE_NAME"
+    exit 0
+fi
 
 APPLY=0
 if [ "${1:-}" = "--apply" ]; then

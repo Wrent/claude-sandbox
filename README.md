@@ -88,6 +88,18 @@ claude-sandbox-prune           # dry run — lists what would be removed
 claude-sandbox-prune --apply   # actually removes the eligible worktrees
 ```
 
+To remove one specific worktree regardless of lock state or uncommitted
+changes, name it explicitly:
+
+```sh
+claude-sandbox-prune --force my-task
+```
+
+A lock usually just means a worktree-feature session registered it and
+never cleanly unregistered it (e.g. after a crash), not that it's
+necessarily in active use — but this doesn't check for a still-running
+container, so confirm nothing's actually using it first.
+
 ## Giving it access to a secret it needs
 
 Nothing under a `.gitignore`d path (`.env` files, credential JSON, etc.) is
