@@ -152,6 +152,15 @@ build_common_docker_args() {
         --tmpfs "/home/sandbox/.claude/shell-snapshots:${tmpfs_owner}"
         --tmpfs "/home/sandbox/.claude/file-history:${tmpfs_owner}"
         --tmpfs "/home/sandbox/.claude-runtime:${tmpfs_owner}"
+        # docker run -it allocates a PTY but doesn't forward the calling
+        # shell's TERM/COLORTERM — the container saw TERM=dumb by default,
+        # which tells terminal-aware apps to skip advanced input handling
+        # (e.g. the escape-sequence-based modifier detection Shift+Enter
+        # relies on for a newline instead of submitting). Pass the host's
+        # actual values through so the container sees the same terminal
+        # capabilities the host shell already negotiated.
+        -e "TERM=${TERM:-xterm-256color}"
+        -e "COLORTERM=${COLORTERM:-truecolor}"
         -e "http_proxy=http://${PROXY_HOST}:8888"
         -e "https_proxy=http://${PROXY_HOST}:8888"
         -e "HTTP_PROXY=http://${PROXY_HOST}:8888"
