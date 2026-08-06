@@ -33,26 +33,44 @@ ln -sf "$HOME/.claude/.claude.json" "$HOME/.claude.json"
 # keyed by the same repo-root path string on both sides. Sandbox-only
 # overrides (separate, independently revocable tokens) replace individual
 # server entries by name — see the SANDBOX_MCP_OVERRIDES comment in bin/lib.sh.
-if [ -f /opt/host-settings/claude.json ] && [ -n "${HOST_REPO_ROOT:-}" ]; then
+if [ -f /opt/host-settings/claude.json ]; then
     node -e "
         const fs = require('fs');
         const path = '$HOME/.claude.json';
         const repoRoot = process.env.HOST_REPO_ROOT;
         const hostConfig = JSON.parse(fs.readFileSync('/opt/host-settings/claude.json', 'utf8'));
-        const hostProject = hostConfig.projects && hostConfig.projects[repoRoot];
-        const mcpServers = Object.assign({}, hostProject && hostProject.mcpServers);
-        const overridesPath = '/opt/host-settings/sandbox-mcp-overrides.json';
-        if (fs.existsSync(overridesPath)) {
-            const overrides = JSON.parse(fs.readFileSync(overridesPath, 'utf8'));
-            Object.assign(mcpServers, overrides[repoRoot]);
+        const config = JSON.parse(fs.readFileSync(path, 'utf8'));
+        let changed = false;
+
+        if (repoRoot) {
+            const hostProject = hostConfig.projects && hostConfig.projects[repoRoot];
+            const mcpServers = Object.assign({}, hostProject && hostProject.mcpServers);
+            const overridesPath = '/opt/host-settings/sandbox-mcp-overrides.json';
+            if (fs.existsSync(overridesPath)) {
+                const overrides = JSON.parse(fs.readFileSync(overridesPath, 'utf8'));
+                Object.assign(mcpServers, overrides[repoRoot]);
+            }
+            if (Object.keys(mcpServers).length > 0) {
+                config.projects = config.projects || {};
+                config.projects[repoRoot] = config.projects[repoRoot] || {};
+                config.projects[repoRoot].mcpServers = mcpServers;
+                changed = true;
+            }
         }
-        if (Object.keys(mcpServers).length > 0) {
-            const config = JSON.parse(fs.readFileSync(path, 'utf8'));
-            config.projects = config.projects || {};
-            config.projects[repoRoot] = config.projects[repoRoot] || {};
-            config.projects[repoRoot].mcpServers = mcpServers;
-            fs.writeFileSync(path, JSON.stringify(config, null, 2));
+
+        // deepLinkTerminal: set once Claude Code detects the terminal
+        // (TERM_PROGRAM) during onboarding — the sandbox's own .claude.json
+        // was seeded from a backup taken before that detection ran (see
+        // bin/lib.sh's TERM_PROGRAM comment), so it never got set here even
+        // though the container now sees the same TERM_PROGRAM as the host.
+        // Mirroring it directly is what actually enables the Shift+Enter-
+        // for-newline keybinding instead of submitting.
+        if (hostConfig.deepLinkTerminal && config.deepLinkTerminal !== hostConfig.deepLinkTerminal) {
+            config.deepLinkTerminal = hostConfig.deepLinkTerminal;
+            changed = true;
         }
+
+        if (changed) fs.writeFileSync(path, JSON.stringify(config, null, 2));
     "
 fi
 

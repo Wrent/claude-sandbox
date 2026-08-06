@@ -153,14 +153,17 @@ build_common_docker_args() {
         --tmpfs "/home/sandbox/.claude/file-history:${tmpfs_owner}"
         --tmpfs "/home/sandbox/.claude-runtime:${tmpfs_owner}"
         # docker run -it allocates a PTY but doesn't forward the calling
-        # shell's TERM/COLORTERM — the container saw TERM=dumb by default,
-        # which tells terminal-aware apps to skip advanced input handling
-        # (e.g. the escape-sequence-based modifier detection Shift+Enter
-        # relies on for a newline instead of submitting). Pass the host's
-        # actual values through so the container sees the same terminal
-        # capabilities the host shell already negotiated.
+        # shell's terminal-identifying env vars — the container saw
+        # TERM=dumb and no TERM_PROGRAM by default. Claude Code uses
+        # TERM_PROGRAM (e.g. "iTerm.app") to detect the terminal and set
+        # up terminal-specific behavior like the Shift+Enter-for-newline
+        # keybinding (recorded as deepLinkTerminal in .claude.json once
+        # detected) — without it, the sandbox's separate identity never
+        # gets to run that detection at all.
         -e "TERM=${TERM:-xterm-256color}"
         -e "COLORTERM=${COLORTERM:-truecolor}"
+        -e "TERM_PROGRAM=${TERM_PROGRAM:-}"
+        -e "TERM_PROGRAM_VERSION=${TERM_PROGRAM_VERSION:-}"
         -e "http_proxy=http://${PROXY_HOST}:8888"
         -e "https_proxy=http://${PROXY_HOST}:8888"
         -e "HTTP_PROXY=http://${PROXY_HOST}:8888"
