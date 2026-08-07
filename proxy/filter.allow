@@ -13,5 +13,7 @@
 ^github\.com$
 ^objects\.githubusercontent\.com$
 ^release-assets\.githubusercontent\.com$
+^raw\.githubusercontent\.com$
 ^registry\.npmjs\.org$
 ^registry\.opentofu\.org$
+^registry\.terraform\.io$
