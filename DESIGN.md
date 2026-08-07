@@ -309,6 +309,29 @@ it's deliberately scoped as narrowly as the mechanism allows:
   container→proxy→host path via `bash /dev/tcp`, against a real running
   IntelliJ window.
 
+### 9. Updating the proxy allowlist without disrupting live sessions
+
+`ensure_proxy_stack` used to unconditionally run `docker compose up -d
+--build proxy` on every task launch. That recreates the container the
+instant the built image differs at all from what's running — which
+severs every live connection through the *old* container, including any
+other task's in-progress streaming API response. Confirmed directly this
+was a real, observed cause of a session seeing "Connection closed
+mid-response": held a download open through the proxy and recreated the
+container mid-transfer — it broke immediately.
+
+tinyproxy supports a graceful SIGHUP config reload natively (confirmed:
+`strings` on the binary shows the reload code path, and a live test —
+holding a transfer open through the proxy and sending SIGHUP mid-transfer
+— completed with no disruption). `ensure_proxy_stack` now only does the
+full recreate when the container doesn't exist yet; if it's already
+running, it pushes the current `tinyproxy.conf`/`filter.allow` in via
+`docker cp` and sends `SIGHUP` instead (`reload_proxy_config`). A full
+rebuild is still needed — and still worth doing deliberately, not as a
+side effect of every launch — when the *image* itself changes (new
+packages, Dockerfile edits), since a config reload can't pick up new
+binaries.
+
 ## Implementation notes (resolved during build)
 
 - **Mount paths must mirror the host, not `/workspace`.** A git worktree's

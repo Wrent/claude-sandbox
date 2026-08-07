@@ -58,8 +58,35 @@ worktree_path() {
     echo "$2/.claude/worktrees/$1"
 }
 
+# Pushes the repo's current proxy config into the already-running proxy
+# container and asks tinyproxy to reload it (SIGHUP) instead of recreating
+# the container. tinyproxy supports this natively — confirmed directly: a
+# multi-second download held open through the proxy completed successfully
+# with a reload triggered mid-transfer. A full `docker compose up -d
+# --build` recreate, by contrast, tears down every live connection through
+# the old container the instant it's replaced — including any other
+# task's in-progress API stream, which is a real, observed way for a
+# concurrently-running session to see "Connection closed mid-response"
+# that has nothing to do with the sandbox's own concurrency handling.
+reload_proxy_config() {
+    docker cp "$SANDBOX_DIR/proxy/tinyproxy.conf" "${PROXY_HOST}:/etc/tinyproxy/tinyproxy.conf"
+    docker cp "$SANDBOX_DIR/proxy/filter.allow" "${PROXY_HOST}:/etc/tinyproxy/filter.allow"
+    docker exec "$PROXY_HOST" kill -HUP 1
+}
+
+# Starts the proxy stack if it isn't running yet. If it's already running,
+# hot-reloads the current config into it instead of recreating the
+# container — see reload_proxy_config. Only does a full (re)build when the
+# container doesn't exist at all yet, or when the image itself needs to
+# change (new packages, Dockerfile edits) — call ensure_image-style
+# `docker compose up -d --build proxy` directly for that, deliberately,
+# not as a side effect of every task launch.
 ensure_proxy_stack() {
-    docker compose -f "$SANDBOX_DIR/docker-compose.yml" up -d --build proxy >/dev/null
+    if docker ps --format '{{.Names}}' | grep -qx "$PROXY_HOST"; then
+        reload_proxy_config
+    else
+        docker compose -f "$SANDBOX_DIR/docker-compose.yml" up -d --build proxy >/dev/null
+    fi
 }
 
 ensure_image() {
