@@ -2,7 +2,7 @@
 FROM debian:bookworm-slim
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
-        ca-certificates curl gnupg git bash procps ripgrep jq nano unzip \
+        ca-certificates curl gnupg git bash procps ripgrep jq nano unzip socat \
     && rm -rf /var/lib/apt/lists/*
 
 # Temurin 21 JDK: glibc-based, matches this repo's Kotlin/Gradle toolchain

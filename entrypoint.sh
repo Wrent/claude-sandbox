@@ -123,4 +123,13 @@ if [ -n "${HOST_HOME_PATH:-}" ] && [ -f "${HOST_HOME_PATH}/.claude/plugins/insta
     ln -sf "${HOST_HOME_PATH}/.claude/plugins/known_marketplaces.json" "$HOME/.claude/plugins/known_marketplaces.json"
 fi
 
+# /ide: Claude Code expects the IDE WebSocket server at localhost:<port>
+# per the matching lock file mounted under ~/.claude/ide/ (see
+# discover_ide_ports in bin/lib.sh) — it has no idea this is actually two
+# hops away. Relay container-local 127.0.0.1:<port> to the proxy's own
+# relay for that port, which forwards to the real IDE server on the host.
+for port in ${IDE_RELAY_PORTS:-}; do
+    socat "TCP-LISTEN:${port},bind=127.0.0.1,fork,reuseaddr" "TCP:claude-sandbox-proxy:${port}" &
+done
+
 exec "$@"

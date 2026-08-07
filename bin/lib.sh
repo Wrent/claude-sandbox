@@ -16,6 +16,7 @@ HOST_AGENTS_SKILLS_DIR="$HOME/.agents/skills"
 HOST_PLUGINS_DIR="$HOME/.claude/plugins"
 HOST_CLAUDE_JSON="$HOME/.claude.json"
 SANDBOX_MCP_OVERRIDES="$HOME/.claude/sandbox-mcp-overrides.json"
+HOST_IDE_LOCK_DIR="$HOME/.claude/ide"
 
 require_task_name() {
     if [ -z "${1:-}" ]; then
@@ -89,6 +90,45 @@ git_common_dir() {
 # exact same key Claude Code would derive on the host for this repo.
 project_memory_key() {
     printf '%s' "$1" | sed 's#[/.]#-#g'
+}
+
+# Finds ~/.claude/ide/*.lock files whose workspaceFolders include either
+# the worktree path or the plain repo root, and prints their port numbers
+# (one per line, taken from the filename). Mirrors the matching Claude
+# Code itself does when picking an IDE window for the current cwd.
+discover_ide_ports() {
+    local wt_path="$1" repo_root="$2"
+    [ -d "$HOST_IDE_LOCK_DIR" ] || return 0
+    node -e "
+        const fs = require('fs');
+        const dir = '$HOST_IDE_LOCK_DIR';
+        const targets = new Set(['$wt_path', '$repo_root']);
+        for (const f of fs.readdirSync(dir)) {
+            if (!f.endsWith('.lock')) continue;
+            try {
+                const data = JSON.parse(fs.readFileSync(dir + '/' + f, 'utf8'));
+                const folders = data.workspaceFolders || [];
+                if (folders.some(fld => targets.has(fld))) {
+                    console.log(f.replace(/\.lock\$/, ''));
+                }
+            } catch (e) {}
+        }
+    "
+}
+
+# Ensures a relay for the given IDE WebSocket port is running inside the
+# shared proxy container, forwarding claude-sandbox-proxy:<port> to
+# host.docker.internal:<port> (the real IDE server) — the ONLY hole this
+# opens is that one specific port, not general host-loopback reachability;
+# the sandboxed container only ever talks to claude-sandbox-proxy, never
+# host.docker.internal directly. Idempotent: skips if a relay for that
+# port is already running (e.g. left over from an earlier task).
+ensure_proxy_ide_relay() {
+    local port="$1"
+    if docker exec "$PROXY_HOST" pgrep -f "TCP-LISTEN:${port}," >/dev/null 2>&1; then
+        return 0
+    fi
+    docker exec -d "$PROXY_HOST" socat "TCP-LISTEN:${port},fork,reuseaddr" "TCP:host.docker.internal:${port}"
 }
 
 # Populates the DOCKER_ARGS array with everything shared between the
@@ -260,6 +300,22 @@ build_common_docker_args() {
     # other server not listed here still just mirrors the host as before.
     if [ -f "$SANDBOX_MCP_OVERRIDES" ]; then
         DOCKER_ARGS+=(-v "${SANDBOX_MCP_OVERRIDES}:/opt/host-settings/sandbox-mcp-overrides.json:ro")
+    fi
+
+    # /ide: relay just the specific IDE WebSocket port(s) whose workspace
+    # matches this worktree/repo — see discover_ide_ports/ensure_proxy_ide_relay
+    # above. Mounting the lock file gives Claude Code the authToken it
+    # needs; entrypoint.sh starts the container-local half of the relay
+    # (127.0.0.1:<port> -> claude-sandbox-proxy:<port>) for each port listed.
+    local ide_port ide_relay_ports=""
+    while IFS= read -r ide_port; do
+        [ -n "$ide_port" ] || continue
+        ensure_proxy_ide_relay "$ide_port"
+        DOCKER_ARGS+=(-v "${HOST_IDE_LOCK_DIR}/${ide_port}.lock:/home/sandbox/.claude/ide/${ide_port}.lock:ro")
+        ide_relay_ports="${ide_relay_ports}${ide_relay_ports:+ }${ide_port}"
+    done <<< "$(discover_ide_ports "$wt_path" "$repo_root")"
+    if [ -n "$ide_relay_ports" ]; then
+        DOCKER_ARGS+=(-e "IDE_RELAY_PORTS=${ide_relay_ports}")
     fi
 
     # ~/.claude/gitlab-token: a GitLab access token scoped to `api` only (no

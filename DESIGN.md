@@ -271,6 +271,44 @@ that `grant-secret.sh`, which you might run later from a different shell
 or directory, can still find the right repo without requiring you to `cd`
 back into it.
 
+### 8. `/ide` integration: narrow port relay, not general host reachability
+
+Every other allowlist entry in this document is about reaching *out* to an
+external service. `/ide` is the first hole that reaches *back* into the
+host — a live, authenticated WebSocket control channel (open files, apply
+edits) into a real IDE window, not just the one worktree. That's a
+different class of exposure than "it queried an API it shouldn't have," so
+it's deliberately scoped as narrowly as the mechanism allows:
+
+- IntelliJ's Claude Code plugin publishes one `~/.claude/ide/<port>.lock`
+  file per open window, each recording `workspaceFolders` and an
+  `authToken` for a WebSocket server at `localhost:<port>` on the host.
+  Claude Code's own `/ide` matches against `cwd` to pick the right one.
+- `discover_ide_ports` (`bin/lib.sh`) does the same match against the
+  worktree path and the plain repo root, and only mounts the *matching*
+  lock file(s) into the container — not every open IDE window.
+- The port itself is relayed, not exposed generally: `ensure_proxy_ide_relay`
+  starts a `socat` listener *inside the shared proxy container* (already a
+  member of the `external` network, which is where `host.docker.internal`
+  is reachable on Docker Desktop — confirmed directly, no extra
+  `--add-host` needed) forwarding `claude-sandbox-proxy:<port>` to
+  `host.docker.internal:<port>`. The sandboxed container never talks to
+  `host.docker.internal` itself; `entrypoint.sh` relays its own
+  `127.0.0.1:<port>` to `claude-sandbox-proxy:<port>` over the existing
+  internal network, so from Claude Code's perspective inside the container
+  it's just `localhost:<port>`, same as it would expect on a normal
+  install, unaware it's actually two hops away.
+- Idempotent by design: `ensure_proxy_ide_relay` checks for an existing
+  `socat` process for that port before starting one, so relaunching a task
+  (or starting a second one matching the same IDE window) doesn't spawn
+  duplicates. Stale relays for closed IDE windows are harmless (the
+  forward target just refuses the connection) but do accumulate for the
+  proxy container's lifetime — acceptable for a PoC, not cleaned up
+  automatically.
+- Verified end to end: raw TCP reachability proxy→host, then the full
+  container→proxy→host path via `bash /dev/tcp`, against a real running
+  IntelliJ window.
+
 ## Implementation notes (resolved during build)
 
 - **Mount paths must mirror the host, not `/workspace`.** A git worktree's

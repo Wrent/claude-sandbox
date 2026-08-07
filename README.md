@@ -164,6 +164,18 @@ for anything with real write access), add an override at
 An entry here replaces the mirrored config for that one server name;
 anything not listed still just mirrors the host as before.
 
+## `/ide` (IntelliJ integration)
+
+If IntelliJ has the repo (or the worktree itself) open, `/ide` works from
+inside the sandbox too — it picks up the matching `~/.claude/ide/*.lock`
+file automatically. Unlike everything else here, this reaches back into
+your host rather than out to an external service, so it's scoped as
+narrowly as possible: only the one specific WebSocket port for the
+matching IDE window is relayed (through the proxy sidecar, which is the
+only thing that ever talks to `host.docker.internal`), not general access
+to your host's localhost. See `DESIGN.md` for exactly how the relay works
+if you're curious, or want to extend it (e.g. for another editor).
+
 ## Troubleshooting
 
 - **"run this from inside the git repo you want to sandbox"** — you ran
