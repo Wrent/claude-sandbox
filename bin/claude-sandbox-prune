@@ -93,7 +93,11 @@ while IFS=$'\t' read -r wt_path branch locked; do
         "$WORKTREES_DIR"/*) ;;
         *) continue ;; # not one of this tool's worktrees — never touch it
     esac
-    name="$(basename "$wt_path")"
+    # Not basename — task names can contain "/" (e.g. "feature/FSDS-4280-x"
+    # for a pre-commit hook's branch naming convention), so the worktree
+    # path nests. basename would truncate to just the last segment, which
+    # would then feed a wrong, incomplete path back into --force.
+    name="${wt_path#"$WORKTREES_DIR"/}"
 
     if [ "$wt_path" = "$CURRENT_ROOT" ]; then
         echo "skip     $name  ($branch)  — this session"

@@ -25,8 +25,15 @@ require_task_name() {
     fi
 }
 
+# Docker container names only allow [a-zA-Z0-9_.-] — task names don't
+# have that restriction (e.g. "feature/FSDS-4280-x", the branch-naming
+# convention a pre-commit hook might require), so sanitize just for this
+# one use. The worktree path and the actual git branch name keep the real
+# task name untouched; only the container's --name is affected.
 container_name() {
-    echo "claude-sandbox-$1"
+    local sanitized
+    sanitized="$(printf '%s' "$1" | tr -c 'a-zA-Z0-9_.-' '-')"
+    echo "claude-sandbox-${sanitized}"
 }
 
 # claude-sandbox / claude-sandbox-proxy are run from inside the repo you
@@ -40,8 +47,11 @@ resolve_repo_root() {
 
 # grant-secret.sh can be run from anywhere, so it looks up the repo a given
 # task name was started against instead of relying on the caller's cwd.
+# A task name containing "/" (see container_name's comment) makes this a
+# nested path, so the parent dir needs creating too, not just STATE_DIR
+# itself.
 save_repo_root() {
-    mkdir -p "$STATE_DIR"
+    mkdir -p "$(dirname "$STATE_DIR/$1")"
     echo "$2" > "$STATE_DIR/$1"
 }
 
