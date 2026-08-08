@@ -70,31 +70,39 @@ worktree_path() {
 }
 
 # Pushes the repo's current proxy config into the already-running proxy
-# container and asks tinyproxy to reload it (SIGHUP) instead of recreating
-# the container. tinyproxy supports this natively — confirmed directly: a
-# multi-second download held open through the proxy completed successfully
-# with a reload triggered mid-transfer. A full `docker compose up -d
-# --build` recreate, by contrast, tears down every live connection through
-# the old container the instant it's replaced — including any other
-# task's in-progress API stream, which is a real, observed way for a
-# concurrently-running session to see "Connection closed mid-response"
-# that has nothing to do with the sandbox's own concurrency handling.
-reload_proxy_config() {
+# container and restarts it (docker restart, not a full compose recreate —
+# no image rebuild needed, the running container's writable layer already
+# has the new files once docker cp lands them).
+#
+# IMPORTANT: this DOES disrupt every live connection through the proxy —
+# every concurrent task's in-progress API stream gets cut, same as the
+# recreate this was originally meant to avoid. tinyproxy's SIGHUP handler
+# looks like it should cover this (its own strings mention "Reloading
+# config file", and it's genuinely true that signaling it doesn't kill
+# in-flight connections) but confirmed directly, twice, with a real test
+# entry: it does NOT actually reprocess the Filter list — a brand new
+# allowlist entry stayed blocked after cp + SIGHUP, and only started
+# working after a real restart. There does not appear to be a way to
+# apply a filter.allow change to a running tinyproxy without restarting
+# the process. Call this deliberately, and warn about the disruption
+# first — never as a side effect of routine task launches (see
+# ensure_proxy_stack, which does NOT call this).
+apply_proxy_config() {
     docker cp "$SANDBOX_DIR/proxy/tinyproxy.conf" "${PROXY_HOST}:/etc/tinyproxy/tinyproxy.conf"
     docker cp "$SANDBOX_DIR/proxy/filter.allow" "${PROXY_HOST}:/etc/tinyproxy/filter.allow"
-    docker exec "$PROXY_HOST" kill -HUP 1
+    docker restart "$PROXY_HOST" >/dev/null
 }
 
-# Starts the proxy stack if it isn't running yet. If it's already running,
-# hot-reloads the current config into it instead of recreating the
-# container — see reload_proxy_config. Only does a full (re)build when the
-# container doesn't exist at all yet, or when the image itself needs to
-# change (new packages, Dockerfile edits) — call ensure_image-style
-# `docker compose up -d --build proxy` directly for that, deliberately,
-# not as a side effect of every task launch.
+# Starts the proxy stack if it isn't running yet. Does NOT touch it if it's
+# already running — a routine task launch should never risk disrupting a
+# different, already-running task's connections through the shared proxy.
+# If the proxy's config or image needs updating, that's a deliberate
+# action: apply_proxy_config for a filter.allow-only change (still
+# disruptive — see its comment for why), or `docker compose up -d --build
+# proxy` directly when the image itself needs to change.
 ensure_proxy_stack() {
     if docker ps --format '{{.Names}}' | grep -qx "$PROXY_HOST"; then
-        reload_proxy_config
+        return 0
     else
         docker compose -f "$SANDBOX_DIR/docker-compose.yml" up -d --build proxy >/dev/null
     fi

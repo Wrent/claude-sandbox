@@ -15,5 +15,6 @@
 ^release-assets\.githubusercontent\.com$
 ^raw\.githubusercontent\.com$
 ^registry\.npmjs\.org$
+^binaries\.prisma\.sh$
 ^registry\.opentofu\.org$
 ^registry\.terraform\.io$

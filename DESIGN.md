@@ -309,7 +309,7 @@ it's deliberately scoped as narrowly as the mechanism allows:
   container→proxy→host path via `bash /dev/tcp`, against a real running
   IntelliJ window.
 
-### 9. Updating the proxy allowlist without disrupting live sessions
+### 9. Not disrupting live sessions on routine task launches (allowlist updates are a separate, still-disruptive story)
 
 `ensure_proxy_stack` used to unconditionally run `docker compose up -d
 --build proxy` on every task launch. That recreates the container the
@@ -318,19 +318,45 @@ severs every live connection through the *old* container, including any
 other task's in-progress streaming API response. Confirmed directly this
 was a real, observed cause of a session seeing "Connection closed
 mid-response": held a download open through the proxy and recreated the
-container mid-transfer — it broke immediately.
+container mid-transfer — it broke immediately. Fixed: `ensure_proxy_stack`
+now does nothing at all if the proxy is already running — a routine task
+launch should never risk touching a different, already-running task's
+connections.
 
-tinyproxy supports a graceful SIGHUP config reload natively (confirmed:
-`strings` on the binary shows the reload code path, and a live test —
-holding a transfer open through the proxy and sending SIGHUP mid-transfer
-— completed with no disruption). `ensure_proxy_stack` now only does the
-full recreate when the container doesn't exist yet; if it's already
-running, it pushes the current `tinyproxy.conf`/`filter.allow` in via
-`docker cp` and sends `SIGHUP` instead (`reload_proxy_config`). A full
-rebuild is still needed — and still worth doing deliberately, not as a
-side effect of every launch — when the *image* itself changes (new
-packages, Dockerfile edits), since a config reload can't pick up new
-binaries.
+**Correction to an earlier version of this fix**: it initially tried to
+apply `filter.allow` changes via `docker cp` + `kill -HUP 1`, on the
+theory that tinyproxy's own SIGHUP handler (its `strings` output
+literally mentions "Reloading config file") would pick up the new file
+without disrupting existing connections. The non-disruption part is true
+— a live transfer survived a SIGHUP mid-flight — but SIGHUP does **not**
+actually reprocess the Filter list in this tinyproxy build. Confirmed
+directly, twice, with a real never-before-seen test entry: added to the
+file, container signaled, and the host stayed blocked regardless — only
+a genuine process restart made it take effect. The first "confirmation"
+of this approach only checked that existing connections survived the
+signal, never that a *new* entry actually became reachable, which is how
+the mistake got shipped and then silently applied a no-op for every
+allowlist change made under that assumption.
+
+There does not appear to be a way to apply a `filter.allow` change to a
+running tinyproxy without restarting the process, which unavoidably
+disrupts every live connection through it — this is a real, currently
+unresolved limitation, not something the tooling papers over. `bin/lib.sh`
+now has two distinct operations: `ensure_proxy_stack` (safe, does nothing
+if already running) and `apply_proxy_config` (`docker cp` +
+`docker restart` — lighter than a full image rebuild+recreate, but
+exactly as disruptive to live connections). The latter is for a
+deliberate config-only change and should always be flagged to the user
+first, same as a full rebuild. It also has a side effect worth knowing:
+`docker restart` wipes the dynamically-started `socat` relays from
+decisions #8/#10 (`/ide`, plannotator) — they need re-establishing
+afterward via `ensure_proxy_ide_relay`/`ensure_proxy_plannotator_relay`
+for whichever tasks had them running.
+
+A full rebuild is still needed — and still worth doing deliberately, not
+as a side effect of every launch — when the *image* itself changes (new
+packages, Dockerfile edits), since neither a config reload nor a restart
+can pick up new binaries.
 
 ### 10. plannotator: the mirror image of `/ide`'s relay
 
