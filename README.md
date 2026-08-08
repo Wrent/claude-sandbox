@@ -176,6 +176,20 @@ only thing that ever talks to `host.docker.internal`), not general access
 to your host's localhost. See `DESIGN.md` for exactly how the relay works
 if you're curious, or want to extend it (e.g. for another editor).
 
+## `plannotator`
+
+Works from inside the sandbox if you have the plugin enabled
+(`enabledPlugins["plannotator@plannotator"]` in your `settings.json` —
+already true if you use it on the host). `plannotator annotate <file>`
+starts its server in the container and prints `http://localhost:19432` —
+open that on your host to annotate. The reverse of `/ide`: there, the
+container reaches back to your host; here, your host's browser reaches
+*into* the container, relayed through the proxy the same way. One shared
+port across every concurrent task, so if two sessions try to use it at
+the same moment, the second one wins — not something you're likely to hit
+in practice, but worth knowing if a link stops responding right after
+starting a second annotation elsewhere.
+
 ## Troubleshooting
 
 - **"run this from inside the git repo you want to sandbox"** — you ran

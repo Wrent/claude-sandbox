@@ -332,6 +332,42 @@ side effect of every launch — when the *image* itself changes (new
 packages, Dockerfile edits), since a config reload can't pick up new
 binaries.
 
+### 10. plannotator: the mirror image of `/ide`'s relay
+
+`/ide` relays a container's *outbound* reach to a host service. plannotator
+needs the opposite: it runs a server *inside* the sandbox container that
+the host's browser needs to reach. Docker's `-p` port publishing doesn't
+work at all for a container on an `internal: true` network — confirmed
+directly (`docker port` shows nothing for a container on the internal
+network, vs. a normal mapping on a plain bridge network in a side-by-side
+test). The proxy container is the one already dual-homed member of both
+networks, so it does the publishing instead: `docker-compose.yml` gives it
+a permanent `127.0.0.1:19432` mapping, and `ensure_proxy_plannotator_relay`
+points a `socat` listener inside it at whichever sandbox container is
+current, by container name over the shared internal network. One shared
+host port across every concurrent task — if two try to use plannotator at
+the same moment, the second's relay silently takes over the port
+(last-task-wins), same accepted tradeoff as the `/ide` relay's stale-port
+cleanup gap.
+
+plannotator ships as a self-contained `bun build --compile` binary — no
+bun runtime or `node_modules` needed — with first-class remote-mode
+support already built in by its own authors: `PLANNOTATOR_REMOTE=1` plus
+a fixed `PLANNOTATOR_PORT` is a documented, intentional scenario (default
+port for remote mode is even 19432 already, before we set anything), not
+a mode we're forcing on it. One sharp edge: a `bun`-compiled binary reads
+its own executable file at startup to unpack the embedded bundle, so it
+needs real *read* permission, not just execute — confirmed directly: with
+execute-only bits, it silently fell back to bun's own generic CLI instead
+of plannotator's, since the self-read failed permission-denied for the
+non-root sandbox user. `chmod 755`, not `chmod +x` (which only adds
+execute bits, not read ones), fixed it.
+
+Gated on `enabledPlugins["plannotator@plannotator"]` in the host's
+`settings.json` (already mirrored in — see decision #4) — setting up the
+relay unconditionally on every task would silently steal the shared port
+from a task that actually wants it.
+
 ## Implementation notes (resolved during build)
 
 - **Mount paths must mirror the host, not `/workspace`.** A git worktree's

@@ -46,6 +46,26 @@ RUN : "cache-bust ${DAILY_CACHE_BUST}" \
     && /tmp/install-opentofu.sh --install-method standalone \
     && rm /tmp/install-opentofu.sh
 
+# plannotator: browser-based plan/diff annotation UI. Ships as a
+# self-contained compiled (bun build --compile) binary — no bun/node_modules
+# needed at runtime, EXCEPT that a bun-compiled binary reads its own
+# executable file at startup to extract the embedded bundle, so it needs
+# real read permission, not just execute. `chmod +x` alone doesn't
+# guarantee that (it only adds execute bits, not read ones) — confirmed
+# directly: with execute-only permissions, the binary silently fell back
+# to bun's own generic CLI help instead of plannotator's, since the
+# self-read failed permission-denied for the non-root sandbox user. `755`
+# explicitly. Has first-class remote-mode support built in by its own
+# authors — PLANNOTATOR_REMOTE=1 + a fixed PLANNOTATOR_PORT is a
+# documented, intentional scenario, not something we're forcing on it. The
+# official installer defaults to $HOME/.local/bin; moved to /usr/local/bin
+# so it's on PATH regardless of which user/$HOME ends up running it. See
+# bin/lib.sh for the port-publish side of this (host browser -> container).
+RUN : "cache-bust ${DAILY_CACHE_BUST}" \
+    && curl -fsSL https://plannotator.ai/install.sh | bash \
+    && mv "$HOME/.local/bin/plannotator" /usr/local/bin/plannotator \
+    && chmod 755 /usr/local/bin/plannotator
+
 ARG USER_UID=1000
 RUN useradd -m -u "${USER_UID}" -s /bin/bash sandbox
 RUN mkdir -p /home/sandbox/.claude && chown -R sandbox:sandbox /home/sandbox/.claude

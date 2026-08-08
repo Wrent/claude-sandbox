@@ -17,6 +17,7 @@ HOST_PLUGINS_DIR="$HOME/.claude/plugins"
 HOST_CLAUDE_JSON="$HOME/.claude.json"
 SANDBOX_MCP_OVERRIDES="$HOME/.claude/sandbox-mcp-overrides.json"
 HOST_IDE_LOCK_DIR="$HOME/.claude/ide"
+PLANNOTATOR_PORT=19432
 
 require_task_name() {
     if [ -z "${1:-}" ]; then
@@ -168,6 +169,25 @@ ensure_proxy_ide_relay() {
     docker exec -d "$PROXY_HOST" socat "TCP-LISTEN:${port},fork,reuseaddr" "TCP:host.docker.internal:${port}"
 }
 
+# Mirror image of ensure_proxy_ide_relay: that one relays a container's
+# outbound reach to a host service; this one relays the host's inbound
+# reach to a service running INSIDE a sandbox container (plannotator's
+# server). docker-compose.yml publishes 19432 on the proxy itself (the one
+# dual-homed container — sandbox containers are internal-only, and Docker
+# won't publish ports from an internal network at all, confirmed
+# directly). This just points the proxy's existing relay at whichever
+# container is current — if one's already running for a DIFFERENT
+# container (a previous task), it's replaced; last task to request the
+# port wins, since it's one shared host port across every concurrent task.
+ensure_proxy_plannotator_relay() {
+    local target_container="$1"
+    if docker exec "$PROXY_HOST" pgrep -f "TCP-LISTEN:${PLANNOTATOR_PORT},fork,reuseaddr TCP:${target_container}:" >/dev/null 2>&1; then
+        return 0
+    fi
+    docker exec "$PROXY_HOST" pkill -f "TCP-LISTEN:${PLANNOTATOR_PORT}," >/dev/null 2>&1 || true
+    docker exec -d "$PROXY_HOST" socat "TCP-LISTEN:${PLANNOTATOR_PORT},fork,reuseaddr" "TCP:${target_container}:${PLANNOTATOR_PORT}"
+}
+
 # Populates the DOCKER_ARGS array with everything shared between the
 # subscription and proxy wrappers: network/hardening flags, the worktree +
 # shared .git mounts (kept at identical absolute paths inside the container,
@@ -309,6 +329,23 @@ build_common_docker_args() {
         DOCKER_ARGS+=(
             -v "${HOST_PLUGINS_DIR}:${HOME}/.claude/plugins"
             -e "HOST_HOME_PATH=${HOME}"
+        )
+    fi
+
+    # plannotator: only set this up if the plugin is actually enabled for
+    # this user — pointing the shared relay here on every task launch,
+    # including ones that never touch plannotator, would silently steal
+    # the port from a task that actually wants it if two run concurrently.
+    # PLANNOTATOR_REMOTE=1 + a fixed port is a documented, intentional mode
+    # from plannotator's own authors, not something we're forcing on it —
+    # see the Dockerfile comment. Host reachability is via the proxy's
+    # relay (ensure_proxy_plannotator_relay above), not a direct publish
+    # from this container — Docker doesn't allow that on an internal network.
+    if [ -f "$HOST_SETTINGS_JSON" ] && grep -q '"plannotator@plannotator"[[:space:]]*:[[:space:]]*true' "$HOST_SETTINGS_JSON" 2>/dev/null; then
+        ensure_proxy_plannotator_relay "$(container_name "$name")"
+        DOCKER_ARGS+=(
+            -e "PLANNOTATOR_REMOTE=1"
+            -e "PLANNOTATOR_PORT=${PLANNOTATOR_PORT}"
         )
     fi
 

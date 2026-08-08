@@ -6,6 +6,17 @@ services:
       - internal
       - external
     restart: unless-stopped
+    ports:
+      # plannotator's remote-mode port. Sandbox containers live on the
+      # internal-only network, which Docker silently refuses to publish
+      # ports from at all — confirmed directly (docker port shows nothing
+      # for a container on an internal network, vs. a normal mapping on a
+      # plain bridge network). The proxy, already the one dual-homed
+      # container, relays this instead: host -> proxy:19432 -> a socat
+      # listener inside the proxy -> whichever sandbox container is
+      # currently running plannotator, by container name over the shared
+      # internal network. See ensure_proxy_plannotator_relay in bin/lib.sh.
+      - "127.0.0.1:19432:19432"
 
 networks:
   internal:
