@@ -66,6 +66,15 @@ RUN : "cache-bust ${DAILY_CACHE_BUST}" \
     && mv "$HOME/.local/bin/plannotator" /usr/local/bin/plannotator \
     && chmod 755 /usr/local/bin/plannotator
 
+# Headless Chromium (Playwright), for skills/scripts that drive a browser
+# (e.g. the `run` skill's browser-driven app verification). The browser
+# binary itself is installed later, after switching to the sandbox user,
+# so its cache lands under that user's own $HOME — but the *system*
+# libraries headless Chrome needs (nss, atk, at-spi, etc.) require root to
+# apt-get, which the sandbox user never has, so that part has to happen
+# here.
+RUN : "cache-bust ${DAILY_CACHE_BUST}" && npx -y playwright install-deps chromium
+
 ARG USER_UID=1000
 RUN useradd -m -u "${USER_UID}" -s /bin/bash sandbox
 RUN mkdir -p /home/sandbox/.claude && chown -R sandbox:sandbox /home/sandbox/.claude
@@ -80,6 +89,15 @@ ENV HOME=/home/sandbox
 ENV EDITOR=nano
 ENV VISUAL=nano
 USER sandbox
+
+# Browser binary itself, as the sandbox user so its cache lands at
+# /home/sandbox/.cache/ms-playwright with correct ownership already —
+# fully pre-baked, no runtime network access needed for this at all.
+# Headless Chrome needs --no-sandbox in this container regardless of the
+# browser being present: `--cap-drop ALL` (see bin/lib.sh) means Chrome's
+# own internal sandbox can't initialize — confirmed directly, it launches
+# and renders correctly with --no-sandbox --disable-gpu.
+RUN : "cache-bust ${DAILY_CACHE_BUST}" && npx -y playwright install chromium
 
 ENTRYPOINT ["/usr/local/bin/entrypoint.sh"]
 CMD ["claude", "--permission-mode", "auto"]
