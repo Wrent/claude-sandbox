@@ -190,6 +190,17 @@ the same moment, the second one wins — not something you're likely to hit
 in practice, but worth knowing if a link stops responding right after
 starting a second annotation elsewhere.
 
+## `brainstorming` skill's visual companion
+
+If you use the `brainstorming` skill (personal skills are shared in, see
+above) and accept its visual companion, its browser mockup server works
+from inside the sandbox the same way plannotator does: relayed through the
+proxy on a fixed port, so no port-forwarding setup needed on your end.
+Nothing to configure — the sandbox's own `CLAUDE.md` tells the agent to
+start the server with the right flags for this environment. Same one-
+shared-port caveat as plannotator: if two sandbox sessions use it at the
+same moment, the second one wins.
+
 ## Troubleshooting
 
 - **"run this from inside the git repo you want to sandbox"** — you ran

@@ -43,6 +43,19 @@ out of reach on purpose. `plan`/`apply` against real infra, or any command
 that touches the configured backend, will fail to connect; that's the
 intended boundary, not something to fix by finding a way around it.
 
+## Brainstorming skill's visual companion
+
+If you use the `brainstorming` skill's visual companion
+(`start-server.sh`), always pass `--host 0.0.0.0 --url-host localhost`.
+Its default bind (127.0.0.1) is only reachable inside this container —
+the host's browser can't reach it there, only via a relay that connects
+in from a different container, which needs the server listening on all
+interfaces. This sandbox has a fixed `BRAINSTORM_PORT` set in the
+environment and a relay already wired to it (same idea as plannotator
+below), so the URL you report to the user will work as long as the server
+actually binds `0.0.0.0` — the port itself is handled for you, don't pass
+a port flag.
+
 ## Missing credential files
 
 If a command fails because a gitignored `.env`/credential file is missing,

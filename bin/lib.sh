@@ -18,6 +18,7 @@ HOST_CLAUDE_JSON="$HOME/.claude.json"
 SANDBOX_MCP_OVERRIDES="$HOME/.claude/sandbox-mcp-overrides.json"
 HOST_IDE_LOCK_DIR="$HOME/.claude/ide"
 PLANNOTATOR_PORT=19432
+BRAINSTORM_PORT=19433
 
 require_task_name() {
     if [ -z "${1:-}" ]; then
@@ -196,6 +197,27 @@ ensure_proxy_plannotator_relay() {
     docker exec -d "$PROXY_HOST" socat "TCP-LISTEN:${PLANNOTATOR_PORT},fork,reuseaddr" "TCP:${target_container}:${PLANNOTATOR_PORT}"
 }
 
+# Same pattern as ensure_proxy_plannotator_relay, for the brainstorming
+# skill's "visual companion" server (~/.agents/skills/brainstorming). That
+# server binds 127.0.0.1 on a random high port by default — reachable by
+# nothing outside its own container even with a relay pointed at it, since
+# the relay lives in a *different* container (the proxy) and can only reach
+# a listener bound to all interfaces via the internal network's container-
+# name DNS. Fixing the bind address is a per-invocation flag
+# (`--host 0.0.0.0`), not something this script can set — see the
+# CLAUDE.md note that tells the agent to pass it inside the sandbox. This
+# function only handles the other half: pinning the port so the relay
+# below can be pre-wired to it, same one-shared-port/last-task-wins
+# tradeoff as plannotator.
+ensure_proxy_brainstorm_relay() {
+    local target_container="$1"
+    if docker exec "$PROXY_HOST" pgrep -f "TCP-LISTEN:${BRAINSTORM_PORT},fork,reuseaddr TCP:${target_container}:" >/dev/null 2>&1; then
+        return 0
+    fi
+    docker exec "$PROXY_HOST" pkill -f "TCP-LISTEN:${BRAINSTORM_PORT}," >/dev/null 2>&1 || true
+    docker exec -d "$PROXY_HOST" socat "TCP-LISTEN:${BRAINSTORM_PORT},fork,reuseaddr" "TCP:${target_container}:${BRAINSTORM_PORT}"
+}
+
 # Populates the DOCKER_ARGS array with everything shared between the
 # subscription and proxy wrappers: network/hardening flags, the worktree +
 # shared .git mounts (kept at identical absolute paths inside the container,
@@ -355,6 +377,22 @@ build_common_docker_args() {
             -e "PLANNOTATOR_REMOTE=1"
             -e "PLANNOTATOR_PORT=${PLANNOTATOR_PORT}"
         )
+    fi
+
+    # brainstorming skill's "visual companion" (start-server.sh /
+    # server.cjs): same reverse-relay need as plannotator (host browser ->
+    # container), but the server's own default is a RANDOM port, which
+    # can't be pre-wired into a relay. server.cjs does honor a
+    # BRAINSTORM_PORT env var for a fixed port, same idea as
+    # PLANNOTATOR_PORT above — this pins it so ensure_proxy_brainstorm_relay
+    # can point at a known port. The other half (the server's default
+    # 127.0.0.1-only bind) is a CLI flag the skill invokes itself
+    # (--host 0.0.0.0), not something set here — see the sandbox CLAUDE.md.
+    # Gated on the skill actually being present, same reasoning as the
+    # plannotator gate above.
+    if [ -d "$HOST_AGENTS_SKILLS_DIR/brainstorming" ]; then
+        ensure_proxy_brainstorm_relay "$(container_name "$name")"
+        DOCKER_ARGS+=(-e "BRAINSTORM_PORT=${BRAINSTORM_PORT}")
     fi
 
     # Local/user-scoped MCP servers registered against this repo (e.g. via

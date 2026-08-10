@@ -17,6 +17,11 @@ services:
       # currently running plannotator, by container name over the shared
       # internal network. See ensure_proxy_plannotator_relay in bin/lib.sh.
       - "127.0.0.1:19432:19432"
+      # brainstorming skill's visual-companion server, same reasoning:
+      # host -> proxy:19433 -> a socat listener inside the proxy ->
+      # whichever sandbox container currently has it running. See
+      # ensure_proxy_brainstorm_relay in bin/lib.sh.
+      - "127.0.0.1:19433:19433"
 
 networks:
   internal:

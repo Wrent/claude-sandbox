@@ -394,6 +394,34 @@ Gated on `enabledPlugins["plannotator@plannotator"]` in the host's
 relay unconditionally on every task would silently steal the shared port
 from a task that actually wants it.
 
+### 11. brainstorming skill's visual companion: same relay, plus a bind-address problem plannotator didn't have
+
+The `brainstorming` skill (shared in via `HOST_AGENTS_SKILLS_DIR`, decision
+#4) has its own browser-based companion server
+(`skills/brainstorming/scripts/server.cjs`) for showing mockups during
+design discussions — same shape of problem as plannotator (host browser
+needs to reach a server running inside the sandbox container), so it gets
+the same fix: a permanent `127.0.0.1:19433` mapping on the proxy in
+`docker-compose.yml`, and `ensure_proxy_brainstorm_relay` pointing a
+`socat` listener at whichever sandbox container is current, gated on the
+skill directory actually being present.
+
+One extra wrinkle plannotator didn't have: this server's default bind is
+`127.0.0.1` (only reachable inside its own container) on a **random** high
+port every run, picked in `server.cjs` itself. A relay can't be pre-wired
+to a random port, and pinning the port alone wouldn't help if the bind
+stays loopback-only — the proxy container reaches in over the internal
+network by container name, which only works against a listener on all
+interfaces. The port half is fixable the same way as plannotator
+(`BRAINSTORM_PORT` env var, which `server.cjs` already reads); the bind
+half isn't something `bin/lib.sh` can set from outside, since it's a CLI
+flag (`--host 0.0.0.0`) the skill's own script decides per invocation.
+Instead of forcing it via a wrapper, the sandbox's `CLAUDE.md` just tells
+the agent to pass that flag — the skill's own docs already recommend
+`--host 0.0.0.0` for "remote/containerized setups", so this isn't
+fighting the skill's design, just triggering the mode it already expects
+for exactly this situation.
+
 ## Implementation notes (resolved during build)
 
 - **Mount paths must mirror the host, not `/workspace`.** A git worktree's
