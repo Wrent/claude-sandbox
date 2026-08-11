@@ -5,16 +5,31 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
         ca-certificates curl gnupg git bash procps ripgrep jq nano unzip socat \
     && rm -rf /var/lib/apt/lists/*
 
+# Node.js: runtime for the Claude Code CLI itself. Installed early (ahead of
+# Temurin and the cache-busted installers below) purely so the Chromium deps
+# step right after it — which needs npx — sits as early in the layer stack
+# as its own prerequisites allow, insulated from edits to those installers.
+RUN curl -fsSL https://deb.nodesource.com/setup_20.x | bash - \
+    && apt-get install -y --no-install-recommends nodejs \
+    && rm -rf /var/lib/apt/lists/*
+
+# Headless Chromium (Playwright) system deps, for skills/scripts that drive a
+# browser (e.g. the `run` skill's browser-driven app verification). No
+# DAILY_CACHE_BUST here on purpose: this install is slow, and re-running it
+# daily (or whenever an unrelated installer below changes) buys nothing —
+# the pinned Playwright/Chromium version is fine to keep until something
+# actually forces a rebuild of this layer. Needs root to apt-get the system
+# libraries headless Chrome needs (nss, atk, at-spi, etc.), which the sandbox
+# user never has — that part has to happen here, before the user switch. The
+# browser binary itself is installed later, after switching to the sandbox
+# user, so its cache lands under that user's own $HOME.
+RUN npx -y playwright install-deps chromium
+
 # Temurin 21 JDK: glibc-based, matches this repo's Kotlin/Gradle toolchain
 # (Debian bookworm doesn't package Java 21 itself, not even in backports)
 RUN curl -fsSL https://packages.adoptium.net/artifactory/api/gpg/key/public | gpg --dearmor -o /usr/share/keyrings/adoptium.gpg \
     && echo "deb [signed-by=/usr/share/keyrings/adoptium.gpg] https://packages.adoptium.net/artifactory/deb bookworm main" > /etc/apt/sources.list.d/adoptium.list \
     && apt-get update && apt-get install -y --no-install-recommends temurin-21-jdk \
-    && rm -rf /var/lib/apt/lists/*
-
-# Node.js: runtime for the Claude Code CLI itself
-RUN curl -fsSL https://deb.nodesource.com/setup_20.x | bash - \
-    && apt-get install -y --no-install-recommends nodejs \
     && rm -rf /var/lib/apt/lists/*
 
 # DAILY_CACHE_BUST forces the layers below to re-run periodically (see
@@ -66,15 +81,6 @@ RUN : "cache-bust ${DAILY_CACHE_BUST}" \
     && mv "$HOME/.local/bin/plannotator" /usr/local/bin/plannotator \
     && chmod 755 /usr/local/bin/plannotator
 
-# Headless Chromium (Playwright), for skills/scripts that drive a browser
-# (e.g. the `run` skill's browser-driven app verification). The browser
-# binary itself is installed later, after switching to the sandbox user,
-# so its cache lands under that user's own $HOME — but the *system*
-# libraries headless Chrome needs (nss, atk, at-spi, etc.) require root to
-# apt-get, which the sandbox user never has, so that part has to happen
-# here.
-RUN : "cache-bust ${DAILY_CACHE_BUST}" && npx -y playwright install-deps chromium
-
 ARG USER_UID=1000
 RUN useradd -m -u "${USER_UID}" -s /bin/bash sandbox
 RUN mkdir -p /home/sandbox/.claude && chown -R sandbox:sandbox /home/sandbox/.claude
@@ -96,8 +102,9 @@ USER sandbox
 # Headless Chrome needs --no-sandbox in this container regardless of the
 # browser being present: `--cap-drop ALL` (see bin/lib.sh) means Chrome's
 # own internal sandbox can't initialize — confirmed directly, it launches
-# and renders correctly with --no-sandbox --disable-gpu.
-RUN : "cache-bust ${DAILY_CACHE_BUST}" && npx -y playwright install chromium
+# and renders correctly with --no-sandbox --disable-gpu. No DAILY_CACHE_BUST
+# here either, matching install-deps chromium above — see that comment.
+RUN npx -y playwright install chromium
 
 ENTRYPOINT ["/usr/local/bin/entrypoint.sh"]
 CMD ["claude", "--permission-mode", "auto"]
