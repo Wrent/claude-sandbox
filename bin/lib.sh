@@ -124,6 +124,12 @@ ensure_worktree() {
     wt_path="$(worktree_path "$name" "$repo_root")"
     if [ ! -d "$wt_path" ]; then
         git -C "$repo_root" worktree add "$wt_path" -b "$name" >&2
+        # `worktree add` doesn't fetch submodules, and the sandbox container
+        # gets no git credentials of its own (see sandbox CLAUDE.md) — has to
+        # happen here, on the host, with the user's real SSH key, before this
+        # worktree ever gets bind-mounted into a container. No-op for repos
+        # without submodules.
+        git -C "$wt_path" submodule update --init --recursive >&2
     fi
     echo "$wt_path"
 }
