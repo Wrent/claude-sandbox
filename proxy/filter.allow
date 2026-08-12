@@ -19,3 +19,5 @@
 ^binaries\.prisma\.sh$
 ^registry\.opentofu\.org$
 ^registry\.terraform\.io$
+^pypi\.org$
+^files\.pythonhosted\.org$

@@ -3,6 +3,7 @@ FROM debian:bookworm-slim
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
         ca-certificates curl gnupg git bash procps ripgrep jq nano unzip socat \
+        python3 python3-pip python3-venv \
     && rm -rf /var/lib/apt/lists/*
 
 # Node.js: runtime for the Claude Code CLI itself. Installed early (ahead of
@@ -31,6 +32,29 @@ RUN curl -fsSL https://packages.adoptium.net/artifactory/api/gpg/key/public | gp
     && echo "deb [signed-by=/usr/share/keyrings/adoptium.gpg] https://packages.adoptium.net/artifactory/deb bookworm main" > /etc/apt/sources.list.d/adoptium.list \
     && apt-get update && apt-get install -y --no-install-recommends temurin-21-jdk \
     && rm -rf /var/lib/apt/lists/*
+
+ARG USER_UID=1000
+RUN useradd -m -u "${USER_UID}" -s /bin/bash sandbox
+RUN mkdir -p /home/sandbox/.claude && chown -R sandbox:sandbox /home/sandbox/.claude
+
+# Browser binary itself, as the sandbox user so its cache lands at
+# /home/sandbox/.cache/ms-playwright with correct ownership already —
+# fully pre-baked, no runtime network access needed for this at all.
+# Headless Chrome needs --no-sandbox in this container regardless of the
+# browser being present: `--cap-drop ALL` (see bin/lib.sh) means Chrome's
+# own internal sandbox can't initialize — confirmed directly, it launches
+# and renders correctly with --no-sandbox --disable-gpu. No DAILY_CACHE_BUST
+# here either, matching install-deps chromium above — see that comment.
+# Placed ahead of the cache-busted installers below (root switches back
+# right after) on purpose: Docker's layer cache is sequential, so sitting
+# downstream of a layer that changes daily forces this slow layer to
+# reinstall daily too, regardless of its own content being unchanged —
+# the same problem install-deps chromium above was already moved to avoid.
+# HOME is set inline rather than via a global ENV so the root-run
+# installers below don't inherit the sandbox user's home directory.
+USER sandbox
+RUN HOME=/home/sandbox npx -y playwright install chromium
+USER root
 
 # DAILY_CACHE_BUST forces the layers below to re-run periodically (see
 # ensure_image in bin/lib.sh) — otherwise Docker's layer cache pins these
@@ -81,10 +105,6 @@ RUN : "cache-bust ${DAILY_CACHE_BUST}" \
     && mv "$HOME/.local/bin/plannotator" /usr/local/bin/plannotator \
     && chmod 755 /usr/local/bin/plannotator
 
-ARG USER_UID=1000
-RUN useradd -m -u "${USER_UID}" -s /bin/bash sandbox
-RUN mkdir -p /home/sandbox/.claude && chown -R sandbox:sandbox /home/sandbox/.claude
-
 COPY entrypoint.sh /usr/local/bin/entrypoint.sh
 COPY CLAUDE.md /opt/sandbox/CLAUDE.md
 COPY statusline-command.sh /opt/sandbox/statusline-command.sh
@@ -95,16 +115,6 @@ ENV HOME=/home/sandbox
 ENV EDITOR=nano
 ENV VISUAL=nano
 USER sandbox
-
-# Browser binary itself, as the sandbox user so its cache lands at
-# /home/sandbox/.cache/ms-playwright with correct ownership already —
-# fully pre-baked, no runtime network access needed for this at all.
-# Headless Chrome needs --no-sandbox in this container regardless of the
-# browser being present: `--cap-drop ALL` (see bin/lib.sh) means Chrome's
-# own internal sandbox can't initialize — confirmed directly, it launches
-# and renders correctly with --no-sandbox --disable-gpu. No DAILY_CACHE_BUST
-# here either, matching install-deps chromium above — see that comment.
-RUN npx -y playwright install chromium
 
 ENTRYPOINT ["/usr/local/bin/entrypoint.sh"]
 CMD ["claude", "--permission-mode", "auto"]
