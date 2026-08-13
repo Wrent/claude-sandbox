@@ -1,5 +1,6 @@
 ^llm-proxy-ai\.kube1-tt2\.lskube\.eu$
 ^youtrack-mcp-ai\.kube1-tt2\.pub\.lskube\.eu$
+^claude-otel-ml-ai\.kube1-tt2\.pub\.lskube\.eu$
 ^api\.anthropic\.com$
 ^console\.anthropic\.com$
 ^platform\.claude\.com$
