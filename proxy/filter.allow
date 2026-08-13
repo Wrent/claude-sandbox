@@ -4,6 +4,7 @@
 ^console\.anthropic\.com$
 ^platform\.claude\.com$
 ^gitlab\.com$
+^docs\.gitlab\.com$
 ^repo1?\.maven\.org$
 ^repo\.maven\.apache\.org$
 ^plugins\.gradle\.org$
