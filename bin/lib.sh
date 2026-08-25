@@ -138,6 +138,22 @@ git_common_dir() {
     (cd "$1" && cd "$(git rev-parse --git-common-dir)" && pwd)
 }
 
+# `git worktree remove` refuses outright — "fatal: working trees
+# containing submodules cannot be moved or removed" — for any worktree
+# whose checked-out tree has a submodule (gitlink) entry, regardless of
+# whether that submodule is actually initialized; `git submodule deinit`
+# does NOT clear this, since the check is against the tree/index, not the
+# checkout state. The documented way around it (see git-worktree(1)'s
+# "Multiple checkout" caveat) is to remove the working directory directly
+# and let `worktree prune` clean up the now-dangling administrative files
+# under .git/worktrees/ — this is what `git worktree remove` itself does
+# internally, minus the submodule check.
+remove_worktree() {
+    local repo_root="$1" wt_path="$2"
+    rm -rf "$wt_path"
+    git -C "$repo_root" worktree prune
+}
+
 # Mirrors Claude Code's own project-key slugification (absolute path, "/"
 # and "." each replaced with "-") so the memory mount below lands on the
 # exact same key Claude Code would derive on the host for this repo.

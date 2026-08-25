@@ -47,9 +47,7 @@ if [ "${1:-}" = "--force" ]; then
         echo "warning: uncommitted changes in this worktree will be lost"
     fi
 
-    # git requires --force twice to override a lock, once for uncommitted
-    # changes — passing it twice unconditionally covers either or both.
-    git -C "$REPO_ROOT" worktree remove --force --force "$FORCE_WT_PATH"
+    remove_worktree "$REPO_ROOT" "$FORCE_WT_PATH"
     echo "force-removed $FORCE_NAME"
     exit 0
 fi
@@ -127,7 +125,7 @@ while IFS=$'\t' read -r wt_path branch locked; do
     fi
 
     if [ "$APPLY" -eq 1 ]; then
-        git -C "$REPO_ROOT" worktree remove "$wt_path"
+        remove_worktree "$REPO_ROOT" "$wt_path"
         echo "removed  $name  ($branch)"
     else
         echo "remove   $name  ($branch)  — merged into origin/$DEFAULT_BRANCH, clean, unlocked"
