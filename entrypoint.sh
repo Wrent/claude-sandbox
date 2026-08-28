@@ -93,6 +93,20 @@ node -e "
     if (!settings.statusLine) {
         settings.statusLine = { type: 'command', command: 'bash /opt/sandbox/statusline-command.sh' };
     }
+    // Start Remote Control automatically in every sandbox session, rather
+    // than making you type /remote-control each time. Seeded once (not
+    // re-asserted on every start, unlike enabledPlugins below) so that
+    // switching 'Enable Remote Control for all sessions' off in /config
+    // actually sticks — that toggle writes this same key, and forcing it
+    // back here each start would silently undo it. Harmless where Remote
+    // Control can't run at all: bin/claude-sandbox-proxy sessions point
+    // ANTHROPIC_BASE_URL at the corporate LLM proxy, which makes them
+    // permanently ineligible, and the setting is then ignored rather than
+    // being an error. Note a project- or local-scoped settings.json in the
+    // mounted worktree setting this to false takes precedence over this.
+    if (settings.remoteControlAtStartup === undefined) {
+        settings.remoteControlAtStartup = true;
+    }
     if (fs.existsSync(hostSettingsPath)) {
         const hostSettings = JSON.parse(fs.readFileSync(hostSettingsPath, 'utf8'));
         if (hostSettings.enabledPlugins) settings.enabledPlugins = hostSettings.enabledPlugins;
