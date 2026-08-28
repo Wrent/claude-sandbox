@@ -5,6 +5,23 @@
 ^api\.anthropic\.com$
 ^console\.anthropic\.com$
 ^platform\.claude\.com$
+# Remote Control's websocket control channel (wss://) — the /remote-control
+# command, which lets claude.ai/code or the Claude mobile app drive a
+# session that keeps running in this container. Eligibility is decided
+# separately, before any connection is made: Claude Code gates the feature
+# behind a GrowthBook feature flag (`tengu_ccr_bridge`). GrowthBook is the
+# third-party feature-flag service Anthropic uses to decide which
+# not-yet-general-availability features an account may use — but the CLI
+# reads that flag set over api.anthropic.com, already allowed above, so
+# cdn.growthbook.io (the GrowthBook SDK's own default CDN) deliberately is
+# NOT listed here: a full session was observed never to contact it.
+#
+# The other half of making this work is NOT setting
+# CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC — see the comment in the
+# top-level Dockerfile. Applies to bin/claude-sandbox only:
+# bin/claude-sandbox-proxy points ANTHROPIC_BASE_URL at the corporate LLM
+# proxy, and Remote Control requires a direct api.anthropic.com connection.
+^bridge\.claudeusercontent\.com$
 ^gitlab\.com$
 ^docs\.gitlab\.com$
 ^repo1?\.maven\.org$

@@ -110,7 +110,27 @@ COPY CLAUDE.md /opt/sandbox/CLAUDE.md
 COPY statusline-command.sh /opt/sandbox/statusline-command.sh
 RUN chmod +x /usr/local/bin/entrypoint.sh /opt/sandbox/statusline-command.sh
 
-ENV CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC=1
+# CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC is deliberately NOT set here.
+# It reads as a harmless privacy tightening, but it also flips Claude Code's
+# traffic mode to "essential-traffic", which switches off feature-flag
+# (GrowthBook) evaluation wholesale. Remote Control is gated behind the
+# `tengu_ccr_bridge` feature flag, so with the variable set that gate can
+# never evaluate true and /remote-control refuses with "Remote Control
+# requires feature-flag evaluation, which is disabled because
+# CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC is set." Leaving it unset is what
+# makes /remote-control usable in a sandbox session; the trade-off is that
+# non-essential telemetry is on, the same as an ordinary host session.
+# The flag set itself is fetched over api.anthropic.com (already allowed),
+# so no extra host is needed to become *eligible*; connecting afterwards
+# needs bridge.claudeusercontent.com — see proxy/filter.allow. Unsetting
+# this also re-enables Claude Code's own auto-updater and its Datadog log
+# shipping; the updater can't write the root-owned npm global dir (a
+# harmless `claude doctor` warning — the image reinstalls the CLI on every
+# DAILY_CACHE_BUST rebuild anyway), and the Datadog host is simply refused
+# by the proxy's default-deny. Note this only ever applies to
+# bin/claude-sandbox: bin/claude-sandbox-proxy sets ANTHROPIC_BASE_URL to
+# the corporate LLM proxy, and Remote Control requires a direct
+# api.anthropic.com connection, so it stays unavailable there regardless.
 ENV HOME=/home/sandbox
 ENV EDITOR=nano
 ENV VISUAL=nano
