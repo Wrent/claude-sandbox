@@ -41,3 +41,4 @@
 ^registry\.terraform\.io$
 ^pypi\.org$
 ^files\.pythonhosted\.org$
+^claude\.ai$
