@@ -317,7 +317,18 @@ build_common_docker_args() {
         -e "https_proxy=http://${PROXY_HOST}:8888"
         -e "HTTP_PROXY=http://${PROXY_HOST}:8888"
         -e "HTTPS_PROXY=http://${PROXY_HOST}:8888"
-        -e "no_proxy=localhost,127.0.0.1"
+        # ds-investigator-mcp: a sibling container on this same internal
+        # network (ds-alert-investigator's `mcp` mode, brought up by that
+        # repo's mcp/lane-up.sh), registered per-repo via
+        # sandbox-mcp-overrides.json. Without it here, an MCP call to
+        # http://ds-investigator-mcp:9000/mcp goes to claude-sandbox-proxy
+        # like any other outbound request and is rejected by our own
+        # FilterDefaultDeny — a container-to-container call on a network we
+        # control, blocked by the egress filter meant for the internet. The
+        # alternative (adding the name to filter.allow) would route
+        # agent-to-agent traffic through the proxy for no benefit, and cost a
+        # disruptive proxy restart to apply.
+        -e "no_proxy=localhost,127.0.0.1,ds-investigator-mcp"
         # JVM tools (gradlew's bootstrap included) don't read http_proxy/
         # https_proxy — those are a shell/curl convention. JAVA_TOOL_OPTIONS
         # is read directly by the JVM itself, so this covers gradlew and any
