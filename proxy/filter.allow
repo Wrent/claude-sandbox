@@ -22,6 +22,9 @@
 # bin/claude-sandbox-proxy points ANTHROPIC_BASE_URL at the corporate LLM
 # proxy, and Remote Control requires a direct api.anthropic.com connection.
 ^bridge\.claudeusercontent\.com$
+# Artifact content is served from a random per-artifact UUID subdomain of
+# frame.claudeusercontent.com, not from claude.ai itself.
+^[a-f0-9-]+\.frame\.claudeusercontent\.com$
 ^gitlab\.com$
 ^docs\.gitlab\.com$
 ^repo1?\.maven\.org$
