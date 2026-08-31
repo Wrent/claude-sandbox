@@ -349,78 +349,50 @@ exactly as disruptive to live connections). The latter is for a
 deliberate config-only change and should always be flagged to the user
 first, same as a full rebuild. It also has a side effect worth knowing:
 `docker restart` wipes the dynamically-started `socat` relays from
-decisions #8/#10 (`/ide`, plannotator) — they need re-establishing
-afterward via `ensure_proxy_ide_relay`/`ensure_proxy_plannotator_relay`
-for whichever tasks had them running.
+decision #8 (`/ide`) — they need re-establishing afterward via
+`ensure_proxy_ide_relay` for whichever tasks had them running.
 
 A full rebuild is still needed — and still worth doing deliberately, not
 as a side effect of every launch — when the *image* itself changes (new
 packages, Dockerfile edits), since neither a config reload nor a restart
 can pick up new binaries.
 
-### 10. plannotator: the mirror image of `/ide`'s relay
-
-`/ide` relays a container's *outbound* reach to a host service. plannotator
-needs the opposite: it runs a server *inside* the sandbox container that
-the host's browser needs to reach. Docker's `-p` port publishing doesn't
-work at all for a container on an `internal: true` network — confirmed
-directly (`docker port` shows nothing for a container on the internal
-network, vs. a normal mapping on a plain bridge network in a side-by-side
-test). The proxy container is the one already dual-homed member of both
-networks, so it does the publishing instead: `docker-compose.yml` gives it
-a permanent `127.0.0.1:19432` mapping, and `ensure_proxy_plannotator_relay`
-points a `socat` listener inside it at whichever sandbox container is
-current, by container name over the shared internal network. One shared
-host port across every concurrent task — if two try to use plannotator at
-the same moment, the second's relay silently takes over the port
-(last-task-wins), same accepted tradeoff as the `/ide` relay's stale-port
-cleanup gap.
-
-plannotator ships as a self-contained `bun build --compile` binary — no
-bun runtime or `node_modules` needed — with first-class remote-mode
-support already built in by its own authors: `PLANNOTATOR_REMOTE=1` plus
-a fixed `PLANNOTATOR_PORT` is a documented, intentional scenario (default
-port for remote mode is even 19432 already, before we set anything), not
-a mode we're forcing on it. One sharp edge: a `bun`-compiled binary reads
-its own executable file at startup to unpack the embedded bundle, so it
-needs real *read* permission, not just execute — confirmed directly: with
-execute-only bits, it silently fell back to bun's own generic CLI instead
-of plannotator's, since the self-read failed permission-denied for the
-non-root sandbox user. `chmod 755`, not `chmod +x` (which only adds
-execute bits, not read ones), fixed it.
-
-Gated on `enabledPlugins["plannotator@plannotator"]` in the host's
-`settings.json` (already mirrored in — see decision #4) — setting up the
-relay unconditionally on every task would silently steal the shared port
-from a task that actually wants it.
-
-### 11. brainstorming skill's visual companion: same relay, plus a bind-address problem plannotator didn't have
+### 10. brainstorming skill's visual companion: the mirror image of `/ide`'s relay
 
 The `brainstorming` skill (shared in via `HOST_AGENTS_SKILLS_DIR`, decision
 #4) has its own browser-based companion server
 (`skills/brainstorming/scripts/server.cjs`) for showing mockups during
-design discussions — same shape of problem as plannotator (host browser
-needs to reach a server running inside the sandbox container), so it gets
-the same fix: a permanent `127.0.0.1:19433` mapping on the proxy in
-`docker-compose.yml`, and `ensure_proxy_brainstorm_relay` pointing a
-`socat` listener at whichever sandbox container is current, gated on the
-skill directory actually being present.
+design discussions. `/ide` relays a container's *outbound* reach to a host
+service; this needs the opposite: the server runs *inside* the sandbox
+container and the host's browser needs to reach it. Docker's `-p` port
+publishing doesn't work at all for a container on an `internal: true`
+network — confirmed directly (`docker port` shows nothing for a container
+on the internal network, vs. a normal mapping on a plain bridge network in
+a side-by-side test). The proxy container is the one already dual-homed
+member of both networks, so it does the publishing instead: a permanent
+`127.0.0.1:19433` mapping on the proxy in `docker-compose.yml`, and
+`ensure_proxy_brainstorm_relay` pointing a `socat` listener inside it at
+whichever sandbox container is current, by container name over the shared
+internal network — gated on the skill directory actually being present,
+so the relay isn't silently stolen on every task launch. One shared host
+port across every concurrent task — if two try to use it at the same
+moment, the second's relay silently takes over the port (last-task-wins),
+same accepted tradeoff as the `/ide` relay's stale-port cleanup gap.
 
-One extra wrinkle plannotator didn't have: this server's default bind is
-`127.0.0.1` (only reachable inside its own container) on a **random** high
-port every run, picked in `server.cjs` itself. A relay can't be pre-wired
-to a random port, and pinning the port alone wouldn't help if the bind
-stays loopback-only — the proxy container reaches in over the internal
-network by container name, which only works against a listener on all
-interfaces. The port half is fixable the same way as plannotator
-(`BRAINSTORM_PORT` env var, which `server.cjs` already reads); the bind
-half isn't something `bin/lib.sh` can set from outside, since it's a CLI
-flag (`--host 0.0.0.0`) the skill's own script decides per invocation.
-Instead of forcing it via a wrapper, the sandbox's `CLAUDE.md` just tells
-the agent to pass that flag — the skill's own docs already recommend
-`--host 0.0.0.0` for "remote/containerized setups", so this isn't
-fighting the skill's design, just triggering the mode it already expects
-for exactly this situation.
+One extra wrinkle: this server's default bind is `127.0.0.1` (only
+reachable inside its own container) on a **random** high port every run,
+picked in `server.cjs` itself. A relay can't be pre-wired to a random
+port, and pinning the port alone wouldn't help if the bind stays
+loopback-only — the proxy container reaches in over the internal network
+by container name, which only works against a listener on all interfaces.
+The port half is fixable with a `BRAINSTORM_PORT` env var, which
+`server.cjs` already reads; the bind half isn't something `bin/lib.sh` can
+set from outside, since it's a CLI flag (`--host 0.0.0.0`) the skill's own
+script decides per invocation. Instead of forcing it via a wrapper, the
+sandbox's `CLAUDE.md` just tells the agent to pass that flag — the
+skill's own docs already recommend `--host 0.0.0.0` for
+"remote/containerized setups", so this isn't fighting the skill's design,
+just triggering the mode it already expects for exactly this situation.
 
 ## Implementation notes (resolved during build)
 

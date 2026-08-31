@@ -17,7 +17,6 @@ HOST_PLUGINS_DIR="$HOME/.claude/plugins"
 HOST_CLAUDE_JSON="$HOME/.claude.json"
 SANDBOX_MCP_OVERRIDES="$HOME/.claude/sandbox-mcp-overrides.json"
 HOST_IDE_LOCK_DIR="$HOME/.claude/ide"
-PLANNOTATOR_PORT=19432
 BRAINSTORM_PORT=19433
 
 require_task_name() {
@@ -202,24 +201,7 @@ ensure_proxy_ide_relay() {
 
 # Mirror image of ensure_proxy_ide_relay: that one relays a container's
 # outbound reach to a host service; this one relays the host's inbound
-# reach to a service running INSIDE a sandbox container (plannotator's
-# server). docker-compose.yml publishes 19432 on the proxy itself (the one
-# dual-homed container — sandbox containers are internal-only, and Docker
-# won't publish ports from an internal network at all, confirmed
-# directly). This just points the proxy's existing relay at whichever
-# container is current — if one's already running for a DIFFERENT
-# container (a previous task), it's replaced; last task to request the
-# port wins, since it's one shared host port across every concurrent task.
-ensure_proxy_plannotator_relay() {
-    local target_container="$1"
-    if docker exec "$PROXY_HOST" pgrep -f "TCP-LISTEN:${PLANNOTATOR_PORT},fork,reuseaddr TCP:${target_container}:" >/dev/null 2>&1; then
-        return 0
-    fi
-    docker exec "$PROXY_HOST" pkill -f "TCP-LISTEN:${PLANNOTATOR_PORT}," >/dev/null 2>&1 || true
-    docker exec -d "$PROXY_HOST" socat "TCP-LISTEN:${PLANNOTATOR_PORT},fork,reuseaddr" "TCP:${target_container}:${PLANNOTATOR_PORT}"
-}
-
-# Same pattern as ensure_proxy_plannotator_relay, for the brainstorming
+# reach to a service running INSIDE a sandbox container — the brainstorming
 # skill's "visual companion" server (~/.agents/skills/brainstorming). That
 # server binds 127.0.0.1 on a random high port by default — reachable by
 # nothing outside its own container even with a relay pointed at it, since
@@ -228,9 +210,15 @@ ensure_proxy_plannotator_relay() {
 # name DNS. Fixing the bind address is a per-invocation flag
 # (`--host 0.0.0.0`), not something this script can set — see the
 # CLAUDE.md note that tells the agent to pass it inside the sandbox. This
-# function only handles the other half: pinning the port so the relay
-# below can be pre-wired to it, same one-shared-port/last-task-wins
-# tradeoff as plannotator.
+# function only handles the other half: pinning the port so docker-compose.yml
+# can publish a fixed 127.0.0.1:19433 mapping on the proxy container (the
+# one dual-homed member of both networks — sandbox containers are
+# internal-only, and Docker won't publish ports from an internal network at
+# all, confirmed directly), and pointing a socat listener inside it at
+# whichever sandbox container is current. If one's already running for a
+# DIFFERENT container (a previous task), it's replaced — last task to
+# request the port wins, since it's one shared host port across every
+# concurrent task.
 ensure_proxy_brainstorm_relay() {
     local target_container="$1"
     if docker exec "$PROXY_HOST" pgrep -f "TCP-LISTEN:${BRAINSTORM_PORT},fork,reuseaddr TCP:${target_container}:" >/dev/null 2>&1; then
@@ -395,34 +383,18 @@ build_common_docker_args() {
         )
     fi
 
-    # plannotator: only set this up if the plugin is actually enabled for
-    # this user — pointing the shared relay here on every task launch,
-    # including ones that never touch plannotator, would silently steal
-    # the port from a task that actually wants it if two run concurrently.
-    # PLANNOTATOR_REMOTE=1 + a fixed port is a documented, intentional mode
-    # from plannotator's own authors, not something we're forcing on it —
-    # see the Dockerfile comment. Host reachability is via the proxy's
-    # relay (ensure_proxy_plannotator_relay above), not a direct publish
-    # from this container — Docker doesn't allow that on an internal network.
-    if [ -f "$HOST_SETTINGS_JSON" ] && grep -q '"plannotator@plannotator"[[:space:]]*:[[:space:]]*true' "$HOST_SETTINGS_JSON" 2>/dev/null; then
-        ensure_proxy_plannotator_relay "$(container_name "$name")"
-        DOCKER_ARGS+=(
-            -e "PLANNOTATOR_REMOTE=1"
-            -e "PLANNOTATOR_PORT=${PLANNOTATOR_PORT}"
-        )
-    fi
-
     # brainstorming skill's "visual companion" (start-server.sh /
-    # server.cjs): same reverse-relay need as plannotator (host browser ->
-    # container), but the server's own default is a RANDOM port, which
-    # can't be pre-wired into a relay. server.cjs does honor a
-    # BRAINSTORM_PORT env var for a fixed port, same idea as
-    # PLANNOTATOR_PORT above — this pins it so ensure_proxy_brainstorm_relay
-    # can point at a known port. The other half (the server's default
-    # 127.0.0.1-only bind) is a CLI flag the skill invokes itself
-    # (--host 0.0.0.0), not something set here — see the sandbox CLAUDE.md.
-    # Gated on the skill actually being present, same reasoning as the
-    # plannotator gate above.
+    # server.cjs): the host's browser needs to reach a server running
+    # inside the sandbox container, and the server's own default is a
+    # RANDOM port, which can't be pre-wired into a relay. server.cjs does
+    # honor a BRAINSTORM_PORT env var for a fixed port instead — this pins
+    # it so ensure_proxy_brainstorm_relay can point at a known port. The
+    # other half (the server's default 127.0.0.1-only bind) is a CLI flag
+    # the skill invokes itself (--host 0.0.0.0), not something set here —
+    # see the sandbox CLAUDE.md. Only set this up if the skill is actually
+    # present — pointing the shared relay here on every task launch,
+    # including ones that never touch it, would silently steal the port
+    # from a task that actually wants it if two run concurrently.
     if [ -d "$HOST_AGENTS_SKILLS_DIR/brainstorming" ]; then
         ensure_proxy_brainstorm_relay "$(container_name "$name")"
         DOCKER_ARGS+=(-e "BRAINSTORM_PORT=${BRAINSTORM_PORT}")

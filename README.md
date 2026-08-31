@@ -176,30 +176,19 @@ only thing that ever talks to `host.docker.internal`), not general access
 to your host's localhost. See `DESIGN.md` for exactly how the relay works
 if you're curious, or want to extend it (e.g. for another editor).
 
-## `plannotator`
-
-Works from inside the sandbox if you have the plugin enabled
-(`enabledPlugins["plannotator@plannotator"]` in your `settings.json` —
-already true if you use it on the host). `plannotator annotate <file>`
-starts its server in the container and prints `http://localhost:19432` —
-open that on your host to annotate. The reverse of `/ide`: there, the
-container reaches back to your host; here, your host's browser reaches
-*into* the container, relayed through the proxy the same way. One shared
-port across every concurrent task, so if two sessions try to use it at
-the same moment, the second one wins — not something you're likely to hit
-in practice, but worth knowing if a link stops responding right after
-starting a second annotation elsewhere.
-
 ## `brainstorming` skill's visual companion
 
 If you use the `brainstorming` skill (personal skills are shared in, see
 above) and accept its visual companion, its browser mockup server works
-from inside the sandbox the same way plannotator does: relayed through the
-proxy on a fixed port, so no port-forwarding setup needed on your end.
-Nothing to configure — the sandbox's own `CLAUDE.md` tells the agent to
-start the server with the right flags for this environment. Same one-
-shared-port caveat as plannotator: if two sandbox sessions use it at the
-same moment, the second one wins.
+from inside the sandbox: relayed through the proxy on a fixed port, so no
+port-forwarding setup needed on your end. Nothing to configure — the
+sandbox's own `CLAUDE.md` tells the agent to start the server with the
+right flags for this environment. The reverse of `/ide`: there, the
+container reaches back to your host; here, your host's browser reaches
+*into* the container. One shared port across every concurrent task, so if
+two sandbox sessions use it at the same moment, the second one wins — not
+something you're likely to hit in practice, but worth knowing if a link
+stops responding right after starting it elsewhere.
 
 ## Troubleshooting
 

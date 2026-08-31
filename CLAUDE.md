@@ -51,10 +51,9 @@ Its default bind (127.0.0.1) is only reachable inside this container —
 the host's browser can't reach it there, only via a relay that connects
 in from a different container, which needs the server listening on all
 interfaces. This sandbox has a fixed `BRAINSTORM_PORT` set in the
-environment and a relay already wired to it (same idea as plannotator
-below), so the URL you report to the user will work as long as the server
-actually binds `0.0.0.0` — the port itself is handled for you, don't pass
-a port flag.
+environment and a relay already wired to it, so the URL you report to the
+user will work as long as the server actually binds `0.0.0.0` — the port
+itself is handled for you, don't pass a port flag.
 
 ## Missing credential files
 
