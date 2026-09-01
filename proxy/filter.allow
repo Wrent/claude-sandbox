@@ -2,6 +2,17 @@
 ^youtrack-mcp-ai\.kube1-tt2\.pub\.lskube\.eu$
 ^claude-otel-ml-ai\.kube1-tt2\.pub\.lskube\.eu$
 ^auth\.tt2\.lsapi\.intra$
+# ds-alert-investigator's MCP server as deployed on the internal okube
+# cluster, reached over HTTPS. VPN-only: the host it resolves to is not
+# on the public internet, so this entry only works while the Docker
+# host itself is on the VPN.
+#
+# Distinct from the `ds-investigator-mcp` entry in no_proxy (see
+# build_common_docker_args): that one is the same server running as a
+# sibling container on our own Docker network, deliberately bypassing
+# this proxy. This entry is for the deployed instance, which is a
+# genuine outbound request and so has to pass the filter.
+^ds-alert-investigator-mcp\.okubefs1\.kube\.lsoffice\.cz$
 ^api\.anthropic\.com$
 ^console\.anthropic\.com$
 ^platform\.claude\.com$
