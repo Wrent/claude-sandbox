@@ -35,7 +35,17 @@ RUN curl -fsSL https://packages.adoptium.net/artifactory/api/gpg/key/public | gp
 
 ARG USER_UID=1000
 RUN useradd -m -u "${USER_UID}" -s /bin/bash sandbox
-RUN mkdir -p /home/sandbox/.claude && chown -R sandbox:sandbox /home/sandbox/.claude
+# .claude/projects has to exist in the image, not just be created at
+# runtime: bin/lib.sh mounts the host memory dir at
+# .claude/projects/<repo-key>/memory, and Docker creates a bind mount's
+# missing parent dirs as root:root. On a fresh claude-sandbox-home volume
+# that would leave .claude/projects itself root-owned, and Claude Code —
+# running as sandbox, with no way to chown — then can't create its own
+# transcript dir (keyed by the worktree path) next to it: "Transcript
+# writes are failing (permission denied — EACCES)". Seeding it here means
+# an empty volume is populated from the image with the right owner, so
+# Docker only ever auto-creates the <repo-key> level, which nothing writes to.
+RUN mkdir -p /home/sandbox/.claude/projects && chown -R sandbox:sandbox /home/sandbox/.claude
 
 # Browser binary itself, as the sandbox user so its cache lands at
 # /home/sandbox/.cache/ms-playwright with correct ownership already —
