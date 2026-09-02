@@ -288,6 +288,16 @@ build_common_docker_args() {
         --tmpfs "/home/sandbox/.claude/jobs:${tmpfs_owner}"
         --tmpfs "/home/sandbox/.claude/shell-snapshots:${tmpfs_owner}"
         --tmpfs "/home/sandbox/.claude/file-history:${tmpfs_owner}"
+        # ide/ for a different reason than the daemon state above: the
+        # per-port lock files below are *file* bind mounts, and Docker
+        # creates a missing mountpoint for one as a root-owned 0-byte stub
+        # — which then outlives the container on the shared volume. They
+        # accumulate one per port ever relayed, and Claude Code lists every
+        # one as a nameless unmatched IDE ("Found 25 other running IDE(s)"),
+        # burying the real entry. Root-owned, so the sandbox user can't
+        # clear them either. A tmpfs gives each container an empty ide/
+        # holding only the locks actually mounted for this worktree.
+        --tmpfs "/home/sandbox/.claude/ide:${tmpfs_owner}"
         --tmpfs "/home/sandbox/.claude-runtime:${tmpfs_owner}"
         # docker run -it allocates a PTY but doesn't forward the calling
         # shell's terminal-identifying env vars — the container saw
