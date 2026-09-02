@@ -7,6 +7,11 @@ access. Design rationale and decisions: [`DESIGN.md`](DESIGN.md).
 ## Prerequisites
 
 - Docker Desktop running.
+- Node.js on the host (not just inside the container) — the launcher
+  scripts shell out to `node` to read JSON: `claude-sandbox-proxy` parses
+  `~/.claude/proxy-settings.json`, and `/ide` port discovery parses
+  `~/.claude/ide/*.lock`. Any recent version works; if you have Claude
+  Code installed natively you already have it.
 - `~/.zshrc` has the `claude-sandbox` / `claude-sandbox-proxy` /
   `grant-secret` aliases (pointing at `bin/` in this repo).
 
