@@ -27,6 +27,12 @@ fi
 # persisted tree so it survives across runs like everything else under .claude/.
 ln -sf "$HOME/.claude/.claude.json" "$HOME/.claude.json"
 
+# On a fresh volume the symlink target doesn't exist yet (Claude Code only
+# writes it on first run), and the MCP mirroring below reads it. Seed an
+# empty object so a first-ever run isn't a dangling-symlink crash; the
+# onboarding wizard + /login then fill it in as usual.
+[ -f "$HOME/.claude/.claude.json" ] || echo '{}' > "$HOME/.claude/.claude.json"
+
 # Local/user-scoped MCP servers (claude mcp add --scope local) registered
 # against this repo on the host — see the HOST_CLAUDE_JSON comment in
 # bin/lib.sh for why these aren't visible by default. Synced every start,
