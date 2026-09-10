@@ -48,6 +48,7 @@ if [ "${1:-}" = "--force" ]; then
     fi
 
     remove_worktree "$REPO_ROOT" "$FORCE_WT_PATH"
+    rm -rf "${SESSIONS_CACHE_DIR}/${FORCE_NAME}"
     echo "force-removed $FORCE_NAME"
     exit 0
 fi
@@ -126,6 +127,7 @@ while IFS=$'\t' read -r wt_path branch locked; do
 
     if [ "$APPLY" -eq 1 ]; then
         remove_worktree "$REPO_ROOT" "$wt_path"
+        rm -rf "${SESSIONS_CACHE_DIR}/${name}"
         echo "removed  $name  ($branch)"
     else
         echo "remove   $name  ($branch)  — merged into origin/$DEFAULT_BRANCH, clean, unlocked"

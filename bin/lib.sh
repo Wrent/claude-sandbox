@@ -8,6 +8,7 @@ NETWORK_NAME="claude-sandbox-internal"
 PROXY_HOST="claude-sandbox-proxy"
 GRADLE_CACHE_DIR="$HOME/.cache/claude-sandbox/gradle"
 STATE_DIR="$HOME/.cache/claude-sandbox/state"
+SESSIONS_CACHE_DIR="$HOME/.cache/claude-sandbox/sessions"
 GITLAB_TOKEN_FILE="$HOME/.claude/gitlab-token"
 HOST_CLAUDE_MD="$HOME/.claude/CLAUDE.md"
 HOST_SETTINGS_JSON="$HOME/.claude/settings.json"
@@ -239,23 +240,65 @@ ensure_proxy_brainstorm_relay() {
 # specific memory bind mount below can nest inside it — mounting a broader
 # path after a narrower one would hide the narrower one instead of nesting.
 build_common_docker_args() {
-    local name="$1" wt_path="$2" repo_root="$3" home_volume="${4:-}" git_common project_key memory_host_dir git_user_name git_user_email tmpfs_owner
+    local name="$1" wt_path="$2" repo_root="$3" home_volume="${4:-}" git_common project_key project_host_dir sessions_host_dir git_user_name git_user_email tmpfs_owner git_common_shadow entry entry_name
+    local -a git_common_subentry_mounts=()
     git_common="$(git_common_dir "$repo_root")"
     # Matches the sandbox user's UID/GID (set at image build time from the
     # host user, see ensure_image) — --tmpfs defaults to root ownership
     # otherwise, and the container runs as non-root.
     tmpfs_owner="uid=$(id -u),gid=$(id -g)"
     project_key="$(project_memory_key "$repo_root")"
-    memory_host_dir="$HOME/.claude/projects/${project_key}/memory"
-    mkdir -p "$GRADLE_CACHE_DIR" "$memory_host_dir"
+    project_host_dir="$HOME/.claude/projects/${project_key}"
+    sessions_host_dir="${SESSIONS_CACHE_DIR}/${name}"
+    mkdir -p "$GRADLE_CACHE_DIR" "${project_host_dir}/memory" "$sessions_host_dir"
 
-    # ${git_common}/config is mounted read-only (by design — the container
-    # shouldn't be able to repoint remotes or rewrite committer identity),
-    # but that also means it can't pick up user.name/user.email from a
-    # config file that isn't there. Resolve the identity a commit would
-    # actually use on the host (repo config falling back to global) and
-    # hand it over as env vars instead — git reads these directly, no
-    # config file needed.
+    # ${git_common}/config must never be a bind mount target at all (by
+    # design, the container shouldn't be able to repoint remotes or
+    # rewrite committer identity on the host — but also for a sharper
+    # reason: git, and tools like glab, which writes a one-time
+    # remote.origin.glab-resolved cache key on its first run against a
+    # repo, write config via lock-file + rename, and Linux refuses
+    # rename(2) onto a path that is itself a mount point — EBUSY —
+    # regardless of whether that mount is ro or rw; confirmed directly.
+    # So even a read-write bind mount of config breaks the very tools this
+    # is meant to let write to it.
+    #
+    # Instead, assemble a shadow directory standing in for git_common:
+    # every real top-level entry (objects, refs, HEAD, worktrees, hooks,
+    # ...) is individually bind-mounted through from the host so commits
+    # and ref updates genuinely reach the real repo, except config, which
+    # is a plain copied file living directly in the shadow dir — an
+    # ordinary, renameable file, not a mount point, so writes into it
+    # succeed but never propagate back to the host's real config. (One
+    # narrow gap: a top-level entry that doesn't exist yet at container
+    # start, e.g. packed-refs before its first gc, won't be covered if
+    # something creates it mid-session — harmless in practice, since loose
+    # refs, which do pass through, are what git checks first.)
+    git_common_shadow="${sessions_host_dir}/git-common"
+    mkdir -p "$git_common_shadow"
+    cp "${git_common}/config" "${git_common_shadow}/config"
+    for entry in "$git_common"/*; do
+        entry_name="$(basename "$entry")"
+        [ "$entry_name" = "config" ] && continue
+        # Docker Desktop's virtiofs backend fails to start the container at
+        # all ("mountpoint ... is outside of rootfs") if the nested bind's
+        # target doesn't already exist inside the shadow dir — it can't
+        # synthesize the stub itself the way it can for a pre-populated
+        # source. A same-type placeholder (empty file or dir) is enough;
+        # the bind mount replaces its content immediately at start.
+        if [ -d "$entry" ]; then
+            mkdir -p "${git_common_shadow}/${entry_name}"
+        else
+            : > "${git_common_shadow}/${entry_name}"
+        fi
+        git_common_subentry_mounts+=(-v "${entry}:${git_common}/${entry_name}")
+    done
+
+    # The shadow's config still won't have user.name/user.email if the host
+    # resolved them from the global config rather than the repo's own (the
+    # common case). Resolve the identity a commit would actually use on the
+    # host (repo config falling back to global) and hand it over as env
+    # vars instead — git reads these directly, no config file needed.
     git_user_name="$(git -C "$repo_root" config user.name || true)"
     git_user_email="$(git -C "$repo_root" config user.email || true)"
 
@@ -284,7 +327,10 @@ build_common_docker_args() {
         # narrower mount.
         --tmpfs "/home/sandbox/.claude/daemon:${tmpfs_owner}"
         --tmpfs "/home/sandbox/.claude/session-env:${tmpfs_owner}"
-        --tmpfs "/home/sandbox/.claude/sessions:${tmpfs_owner}"
+        # sessions is per-task on the host so //resume works across restarts.
+        # Two containers with the same name can't coexist (Docker rejects the
+        # second --name), so there's no concurrent-write risk here.
+        -v "${sessions_host_dir}:/home/sandbox/.claude/sessions"
         --tmpfs "/home/sandbox/.claude/jobs:${tmpfs_owner}"
         --tmpfs "/home/sandbox/.claude/shell-snapshots:${tmpfs_owner}"
         --tmpfs "/home/sandbox/.claude/file-history:${tmpfs_owner}"
@@ -335,10 +381,10 @@ build_common_docker_args() {
         -e "JAVA_TOOL_OPTIONS=-Dhttp.proxyHost=${PROXY_HOST} -Dhttp.proxyPort=8888 -Dhttps.proxyHost=${PROXY_HOST} -Dhttps.proxyPort=8888 -Dhttp.nonProxyHosts=localhost|127.0.0.1"
         -e "GRANT_SECRET_HINT=${SANDBOX_DIR}/bin/grant-secret.sh ${name}"
         -v "${wt_path}:${wt_path}"
-        -v "${git_common}:${git_common}"
-        -v "${git_common}/config:${git_common}/config:ro"
+        -v "${git_common_shadow}:${git_common}"
+        "${git_common_subentry_mounts[@]}"
         -v "${GRADLE_CACHE_DIR}:/home/sandbox/.gradle"
-        -v "${memory_host_dir}:/home/sandbox/.claude/projects/${project_key}/memory"
+        -v "${project_host_dir}:/home/sandbox/.claude/projects/${project_key}"
         -w "${wt_path}"
     )
 
